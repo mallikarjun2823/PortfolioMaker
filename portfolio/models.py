@@ -1,5 +1,26 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings
+import os
+
+
+def user_directory_path_for_project_images(instance, filename):
+    """Return upload path for project images, grouped by user.
+
+    Example: "user_johndoe/projects/filename.png".
+    """
+    username = (
+        instance.portfolio.user.username
+        if instance.portfolio and instance.portfolio.user and instance.portfolio.user.username
+        else "anonymous"
+    )
+    relative_path = os.path.join(f"user_{username}", "projects", filename)
+
+    # Ensure the directory exists under MEDIA_ROOT
+    directory = os.path.join(settings.MEDIA_ROOT, os.path.dirname(relative_path))
+    os.makedirs(directory, exist_ok=True)
+
+    return relative_path
 
 
 # =========================
@@ -206,7 +227,11 @@ class Project(models.Model):
     github_url = models.URLField(blank=True, null=True)
 
     # Image path (used in IMAGE block)
-    image = models.ImageField(upload_to="projects/", null=True, blank=True)
+    image = models.ImageField(
+        upload_to=user_directory_path_for_project_images,
+        null=True,
+        blank=True,
+    )
 
     order = models.FloatField(default=0)
     is_visible = models.BooleanField(default=True)
