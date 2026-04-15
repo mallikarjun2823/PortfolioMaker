@@ -93,7 +93,7 @@ class Section(models.Model):
     is_visible = models.BooleanField(default=True)
 
     # Typography / presentation hints (controlled)
-    presentation = models.JSONField(default=dict)
+    config = models.JSONField(default=dict)
 
     class Meta:
         ordering = ["order"]
