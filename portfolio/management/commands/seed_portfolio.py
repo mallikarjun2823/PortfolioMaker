@@ -22,145 +22,172 @@ class Command(BaseCommand):
         User = get_user_model()
 
         # 1. Users
-        malli, _ = User.objects.get_or_create(
-            username="malli",
-            defaults={"email": "malli@example.com"},
+        mallikarjun = self._upsert_user(
+            User,
+            username="mallikarjun",
+            email="malli.dev@example.com",
         )
-        if malli.email != "malli@example.com":
-            malli.email = "malli@example.com"
-            malli.save(update_fields=["email"])
-
-        john, _ = User.objects.get_or_create(
-            username="john",
-            defaults={"email": "john@example.com"},
+        ananya = self._upsert_user(
+            User,
+            username="ananya",
+            email="ananya.ui@example.com",
         )
-        if john.email != "john@example.com":
-            john.email = "john@example.com"
-            john.save(update_fields=["email"])
 
-        # 2. Themes
-        minimal_dark, _ = Theme.objects.get_or_create(
+        # 2. Themes (industry-style, production-like)
+        minimal_dark = self._upsert_theme(
             name="Minimal Dark",
-            defaults={
-                "config": {
-                    "colors": {
-                        "background": "#0b1120",
-                        "surface": "#111827",
-                        "primary": "#38bdf8",
-                        "text": "#e5e7eb",
-                    },
-                    "font_family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI'",
-                    "spacing": {
-                        "section_y": 64,
-                        "block_y": 32,
-                    },
-                },
-                "is_active": True,
-                "is_default": True,
+            config={
+                "primary_color": "#0f172a",
+                "secondary_color": "#1e293b",
+                "text_color": "#e2e8f0",
+                "font_family": "Inter",
+                "alignment": "left",
             },
         )
 
-        clean_light, _ = Theme.objects.get_or_create(
-            name="Clean Light",
-            defaults={
-                "config": {
-                    "colors": {
-                        "background": "#f9fafb",
-                        "surface": "#ffffff",
-                        "primary": "#2563eb",
-                        "text": "#111827",
-                    },
-                    "font_family": "'Inter', system-ui, -apple-system, BlinkMacSystemFont",
-                    "spacing": {
-                        "section_y": 56,
-                        "block_y": 28,
-                    },
-                },
-                "is_active": True,
-                "is_default": False,
+        modern_light = self._upsert_theme(
+            name="Modern Light",
+            config={
+                "primary_color": "#ffffff",
+                "secondary_color": "#f1f5f9",
+                "text_color": "#0f172a",
+                "font_family": "Poppins",
+                "alignment": "center",
             },
         )
 
-        # 3. Portfolios for user1 (malli)
-        malli_portfolio, _ = Portfolio.objects.get_or_create(
-            user=malli,
-            slug="malli-portfolio",
-            defaults={
-                "title": "Malli Portfolio",
-                "theme": minimal_dark,
-                "is_published": True,
-            },
+        # 3. Portfolios
+        mallikarjun_portfolio = self._upsert_portfolio(
+            user=mallikarjun,
+            title="Mallikarjun Portfolio",
+            slug="mallikarjun-backend-engineer",
+            theme=minimal_dark,
+            description=(
+                "Backend engineer focused on Django, APIs, and scalable data models. "
+                "I build backend-driven systems that are easy to render, theme, and extend."
+            ),
+            is_published=True,
         )
-        malli_portfolio.theme = minimal_dark
-        malli_portfolio.is_published = True
-        malli_portfolio.title = "Malli Portfolio"
-        malli_portfolio.save()
 
-        malli_exp_portfolio, _ = Portfolio.objects.get_or_create(
-            user=malli,
-            slug="malli-exp",
-            defaults={
-                "title": "Malli Experimental",
-                "theme": clean_light,
-                "is_published": False,
-            },
+        ananya_portfolio = self._upsert_portfolio(
+            user=ananya,
+            title="Ananya UI Portfolio",
+            slug="ananya-ui-designer",
+            theme=modern_light,
+            description=(
+                "UI designer who ships modern, accessible interfaces. "
+                "I turn product requirements into clean components, design systems, and delightful interactions."
+            ),
+            is_published=True,
         )
-        malli_exp_portfolio.theme = clean_light
-        malli_exp_portfolio.is_published = False
-        malli_exp_portfolio.title = "Malli Experimental"
-        malli_exp_portfolio.save()
 
-        # 4. Portfolio for user2 (john)
-        john_portfolio, _ = Portfolio.objects.get_or_create(
-            user=john,
-            slug="john-portfolio",
-            defaults={
-                "title": "John Portfolio",
-                "theme": clean_light,
-                "is_published": True,
-            },
-        )
-        john_portfolio.theme = clean_light
-        john_portfolio.is_published = True
-        john_portfolio.title = "John Portfolio"
-        john_portfolio.save()
-
-        # Build each portfolio layout + data
-        self._build_malli_portfolio(malli_portfolio)
-        self._build_malli_experimental_portfolio(malli_exp_portfolio)
-        self._build_john_portfolio(john_portfolio)
+        # 4. Build each portfolio layout + data
+        self._build_portfolio(portfolio=mallikarjun_portfolio, persona="backend")
+        self._build_portfolio(portfolio=ananya_portfolio, persona="designer")
 
         self.stdout.write(self.style.SUCCESS("Seed data created successfully."))
 
-    def _build_malli_portfolio(self, portfolio: Portfolio) -> None:
-        # Clear existing layout/data for idempotency
+    def _upsert_user(self, User, *, username: str, email: str):
+        user, _ = User.objects.get_or_create(username=username, defaults={"email": email})
+        if user.email != email:
+            user.email = email
+            user.save(update_fields=["email"])
+        return user
+
+    def _upsert_theme(self, *, name: str, config: dict) -> Theme:
+        theme, _ = Theme.objects.update_or_create(
+            name=name,
+            defaults={
+                "config": config,
+                "is_active": True,
+            },
+        )
+        return theme
+
+    def _upsert_portfolio(
+        self,
+        *,
+        user,
+        title: str,
+        slug: str,
+        theme: Theme,
+        description: str,
+        is_published: bool,
+    ) -> Portfolio:
+        portfolio, _ = Portfolio.objects.update_or_create(
+            slug=slug,
+            defaults={
+                "user": user,
+                "title": title,
+                "theme": theme,
+                "description": description,
+                "is_published": is_published,
+            },
+        )
+        return portfolio
+
+    def _reset_portfolio(self, portfolio: Portfolio) -> None:
         portfolio.sections.all().delete()
         portfolio.projects.all().delete()
         portfolio.skills.all().delete()
         portfolio.experiences.all().delete()
 
+    def _build_portfolio(self, *, portfolio: Portfolio, persona: str) -> None:
+        """Create a full portfolio layout + typed data.
+
+        persona: "backend" or "designer"; controls the data flavor.
+        """
+
+        self._reset_portfolio(portfolio)
+
         # Sections
         about_section = Section.objects.create(
             portfolio=portfolio,
             name="About Me",
-            order=1.0,
+            order=1,
             is_visible=True,
-            presentation={"text_size": "lg"},
+            config={
+                "text_size": "lg",
+                "font_weight": "medium",
+            },
         )
 
         projects_section = Section.objects.create(
             portfolio=portfolio,
             name="Projects",
-            order=2.0,
+            order=2,
             is_visible=True,
-            presentation={},
+            config={},
         )
 
-        # About Me blocks
+        skills_section = Section.objects.create(
+            portfolio=portfolio,
+            name="Skills",
+            order=3,
+            is_visible=True,
+            config={},
+        )
+
+        experience_section = Section.objects.create(
+            portfolio=portfolio,
+            name="Experience",
+            order=4,
+            is_visible=True,
+            config={},
+        )
+
+        preview_project_title = (
+            "Smart Edu Hub" if persona == "backend" else "Mobile Checkout UX Refresh"
+        )
+        primary_experience_company = (
+            "TechCorp" if persona == "backend" else "PixelCraft Studio"
+        )
+
+        # About Me -> KEY_VALUE
         about_block = Block.objects.create(
             section=about_section,
             type=Block.BlockType.KEY_VALUE,
-            order=1.0,
+            order=1,
             config={},
             is_visible=True,
         )
@@ -170,25 +197,34 @@ class Command(BaseCommand):
             label="Name",
             data_source=Element.DataSource.PORTFOLIO,
             field=Element.DataField.TITLE,
-            order=1.0,
+            config={
+                "filters": [
+                    {"key": "slug", "operator": "eq", "value": portfolio.slug},
+                ]
+            },
+            order=1,
             is_visible=True,
         )
 
-        # Bio assumes a description field; element can still be defined
         Element.objects.create(
             block=about_block,
-            label="Bio",
+            label="Summary",
             data_source=Element.DataSource.PORTFOLIO,
             field=Element.DataField.DESCRIPTION,
-            order=2.0,
+            config={
+                "filters": [
+                    {"key": "slug", "operator": "eq", "value": portfolio.slug},
+                ]
+            },
+            order=2,
             is_visible=True,
         )
 
-        # Projects blocks
+        # Projects -> GRID + IMAGE
         projects_grid_block = Block.objects.create(
             section=projects_section,
             type=Block.BlockType.GRID,
-            order=1.0,
+            order=1,
             config={"columns": 2},
             is_visible=True,
         )
@@ -198,7 +234,8 @@ class Command(BaseCommand):
             label="Project Name",
             data_source=Element.DataSource.PROJECT,
             field=Element.DataField.TITLE,
-            order=1.0,
+            config={},
+            order=1,
             is_visible=True,
         )
         Element.objects.create(
@@ -206,22 +243,24 @@ class Command(BaseCommand):
             label="Description",
             data_source=Element.DataSource.PROJECT,
             field=Element.DataField.DESCRIPTION,
-            order=2.0,
+            config={},
+            order=2,
             is_visible=True,
         )
         Element.objects.create(
             block=projects_grid_block,
-            label="Repo",
+            label="Repository",
             data_source=Element.DataSource.PROJECT,
             field=Element.DataField.GITHUB,
-            order=3.0,
+            config={},
+            order=3,
             is_visible=True,
         )
 
         projects_image_block = Block.objects.create(
             section=projects_section,
             type=Block.BlockType.IMAGE,
-            order=2.0,
+            order=2,
             config={},
             is_visible=True,
         )
@@ -231,61 +270,20 @@ class Command(BaseCommand):
             label="Preview",
             data_source=Element.DataSource.PROJECT,
             field=Element.DataField.IMAGE,
-            order=1.0,
+            config={
+                "filters": [
+                    {"key": "title", "operator": "eq", "value": preview_project_title},
+                ]
+            },
+            order=1,
             is_visible=True,
         )
 
-        # Projects data
-        projects_data = [
-            {
-                "title": "Personal Portfolio Generator",
-                "description": "A Django-based engine that lets users compose portfolio layouts from reusable blocks.",
-                "github_url": "https://github.com/malli/portfolio-generator",
-                "image": "projects/portfolio-generator.png",
-            },
-            {
-                "title": "Task Flow Orchestrator",
-                "description": "A lightweight workflow engine for automating recurring engineering tasks.",
-                "github_url": "https://github.com/malli/taskflow-orchestrator",
-                "image": "projects/taskflow-orchestrator.png",
-            },
-            {
-                "title": "Developer Activity Dashboard",
-                "description": "A dashboard aggregating GitHub activity, CI status, and deployment health.",
-                "github_url": "https://github.com/malli/dev-activity-dashboard",
-                "image": "projects/dev-activity-dashboard.png",
-            },
-        ]
-
-        for index, data in enumerate(projects_data, start=1):
-            Project.objects.create(
-                portfolio=portfolio,
-                title=data["title"],
-                description=data["description"],
-                github_url=data["github_url"],
-                image=data["image"],
-                order=float(index),
-                is_visible=True,
-            )
-
-    def _build_malli_experimental_portfolio(self, portfolio: Portfolio) -> None:
-        portfolio.sections.all().delete()
-        portfolio.projects.all().delete()
-        portfolio.skills.all().delete()
-        portfolio.experiences.all().delete()
-
-        skills_section = Section.objects.create(
-            portfolio=portfolio,
-            name="Skills",
-            order=1.0,
-            is_visible=True,
-            presentation={},
-        )
-
+        # Skills -> LIST
         skills_block = Block.objects.create(
             section=skills_section,
             type=Block.BlockType.LIST,
-            order=1.0,
+            order=1,
             config={},
             is_visible=True,
         )
@@ -295,53 +293,33 @@ class Command(BaseCommand):
             label="Skill",
             data_source=Element.DataSource.SKILL,
             field=Element.DataField.NAME,
-            order=1.0,
+            config={
+                "filters": [
+                    {"key": "level", "operator": "gt", "value": 7},
+                ]
+            },
+            order=1,
             is_visible=True,
         )
         Element.objects.create(
             block=skills_block,
-            label="Level",
+            label="Proficiency",
             data_source=Element.DataSource.SKILL,
             field=Element.DataField.LEVEL,
-            order=2.0,
+            config={
+                "filters": [
+                    {"key": "level", "operator": "gt", "value": 7},
+                ]
+            },
+            order=2,
             is_visible=True,
         )
 
-        skills_data = [
-            {"name": "Python", "level": 9},
-            {"name": "Django", "level": 8},
-            {"name": "REST APIs", "level": 8},
-            {"name": "React", "level": 7},
-            {"name": "Docker & CI/CD", "level": 7},
-        ]
-
-        for index, data in enumerate(skills_data, start=1):
-            Skill.objects.create(
-                portfolio=portfolio,
-                name=data["name"],
-                level=data["level"],
-                order=float(index),
-                is_visible=True,
-            )
-
-    def _build_john_portfolio(self, portfolio: Portfolio) -> None:
-        portfolio.sections.all().delete()
-        portfolio.projects.all().delete()
-        portfolio.skills.all().delete()
-        portfolio.experiences.all().delete()
-
-        experience_section = Section.objects.create(
-            portfolio=portfolio,
-            name="Experience",
-            order=1.0,
-            is_visible=True,
-            presentation={},
-        )
-
+        # Experience -> TIMELINE
         experience_block = Block.objects.create(
             section=experience_section,
             type=Block.BlockType.TIMELINE,
-            order=1.0,
+            order=1,
             config={},
             is_visible=True,
         )
@@ -351,7 +329,12 @@ class Command(BaseCommand):
             label="Company",
             data_source=Element.DataSource.EXPERIENCE,
             field=Element.DataField.COMPANY,
-            order=1.0,
+            config={
+                "filters": [
+                    {"key": "company", "operator": "eq", "value": primary_experience_company},
+                ]
+            },
+            order=1,
             is_visible=True,
         )
         Element.objects.create(
@@ -359,7 +342,12 @@ class Command(BaseCommand):
             label="Role",
             data_source=Element.DataSource.EXPERIENCE,
             field=Element.DataField.ROLE,
-            order=2.0,
+            config={
+                "filters": [
+                    {"key": "company", "operator": "eq", "value": primary_experience_company},
+                ]
+            },
+            order=2,
             is_visible=True,
         )
         Element.objects.create(
@@ -367,27 +355,123 @@ class Command(BaseCommand):
             label="Duration",
             data_source=Element.DataSource.EXPERIENCE,
             field=Element.DataField.TIMELINE,
-            order=3.0,
+            config={
+                "filters": [
+                    {"key": "company", "operator": "eq", "value": primary_experience_company},
+                ]
+            },
+            order=3,
             is_visible=True,
         )
 
-        experiences_data = [
-            {
-                "company": "Nimbus Analytics",
-                "role": "Senior Backend Engineer",
-                "timeline": "2022 - Present",
-            },
-            {
-                "company": "Brightline Solutions",
-                "role": "Software Engineer",
-                "timeline": "2019 - 2022",
-            },
-            {
-                "company": "Skyline Tech",
-                "role": "Junior Developer",
-                "timeline": "2017 - 2019",
-            },
-        ]
+        # Typed data
+        self._seed_projects(portfolio=portfolio, persona=persona)
+        self._seed_skills(portfolio=portfolio, persona=persona)
+        self._seed_experiences(portfolio=portfolio, persona=persona)
+
+    def _seed_projects(self, *, portfolio: Portfolio, persona: str) -> None:
+        username = portfolio.user.username
+        if persona == "backend":
+            projects_data = [
+                {
+                    "title": "Renderfolio",
+                    "description": "A backend-driven portfolio builder where sections, blocks, and elements are defined in the database and rendered dynamically.",
+                    "github_url": "https://github.com/mallikarjun/renderfolio",
+                    "image": f"user_{username}/projects/renderfolio.png",
+                },
+                {
+                    "title": "Smart Edu Hub",
+                    "description": "An educational interaction platform with role-based dashboards, progress tracking, and API-first architecture.",
+                    "github_url": "https://github.com/mallikarjun/smart-edu-hub",
+                    "image": f"user_{username}/projects/smart-edu-hub.png",
+                },
+                {
+                    "title": "Delivery Time Prediction",
+                    "description": "An ML-assisted service predicting delivery ETA using historical orders and operational signals, exposed through REST endpoints.",
+                    "github_url": "https://github.com/mallikarjun/delivery-time-prediction",
+                    "image": f"user_{username}/projects/delivery-time-prediction.png",
+                },
+                {
+                    "title": "PostgreSQL Query Optimizer Notes",
+                    "description": "A curated set of query patterns, indexing strategies, and benchmarks used to improve API response times.",
+                    "github_url": "https://github.com/mallikarjun/pg-query-optimizer-notes",
+                    "image": f"user_{username}/projects/pg-query-optimizer-notes.png",
+                },
+            ]
+        else:
+            projects_data = [
+                {
+                    "title": "Aurora Design System",
+                    "description": "A component library and design system with typography scales, tokens, and accessible UI patterns.",
+                    "github_url": "https://github.com/ananya/aurora-design-system",
+                    "image": f"user_{username}/projects/aurora-design-system.png",
+                },
+                {
+                    "title": "Mobile Checkout UX Refresh",
+                    "description": "A UX redesign for a mobile checkout flow focusing on clarity, reduced friction, and stronger hierarchy.",
+                    "github_url": "https://github.com/ananya/mobile-checkout-ux",
+                    "image": f"user_{username}/projects/mobile-checkout-ux.png",
+                },
+                {
+                    "title": "Portfolio Layout Playground",
+                    "description": "A layout exploration tool for grid and typography combinations to validate responsive behavior before handoff.",
+                    "github_url": "https://github.com/ananya/portfolio-layout-playground",
+                    "image": f"user_{username}/projects/portfolio-layout-playground.png",
+                },
+            ]
+
+        for index, data in enumerate(projects_data, start=1):
+            Project.objects.create(
+                portfolio=portfolio,
+                title=data["title"],
+                description=data["description"],
+                github_url=data["github_url"],
+                image=data["image"],
+                order=index,
+                is_visible=True,
+            )
+
+    def _seed_skills(self, *, portfolio: Portfolio, persona: str) -> None:
+        if persona == "backend":
+            skills_data = [
+                {"name": "Django", "level": 9},
+                {"name": "Django REST Framework", "level": 9},
+                {"name": "PostgreSQL", "level": 8},
+                {"name": "Docker", "level": 7},
+                {"name": "Celery", "level": 7},
+                {"name": "React", "level": 8},
+            ]
+        else:
+            skills_data = [
+                {"name": "Figma", "level": 9},
+                {"name": "UI Design", "level": 9},
+                {"name": "Design Systems", "level": 8},
+                {"name": "Accessibility", "level": 8},
+                {"name": "Tailwind CSS", "level": 8},
+                {"name": "React", "level": 7},
+            ]
+
+        for index, data in enumerate(skills_data, start=1):
+            Skill.objects.create(
+                portfolio=portfolio,
+                name=data["name"],
+                level=data["level"],
+                order=index,
+                is_visible=True,
+            )
+
+    def _seed_experiences(self, *, portfolio: Portfolio, persona: str) -> None:
+        if persona == "backend":
+            experiences_data = [
+                {"company": "TechCorp", "role": "Backend Developer", "timeline": "2024 - Present"},
+                {"company": "StartupX", "role": "Software Engineer Intern", "timeline": "2023 - 2024"},
+                {"company": "Open Source", "role": "Contributor", "timeline": "2022 - 2023"},
+            ]
+        else:
+            experiences_data = [
+                {"company": "PixelCraft Studio", "role": "UI Designer", "timeline": "2024 - Present"},
+                {"company": "Bright Agency", "role": "Junior UI/UX Designer", "timeline": "2023 - 2024"},
+            ]
 
         for index, data in enumerate(experiences_data, start=1):
             Experience.objects.create(
@@ -395,6 +479,6 @@ class Command(BaseCommand):
                 company=data["company"],
                 role=data["role"],
                 timeline=data["timeline"],
-                order=float(index),
+                order=index,
                 is_visible=True,
             )
