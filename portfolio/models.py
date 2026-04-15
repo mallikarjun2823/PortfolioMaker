@@ -88,7 +88,7 @@ class Section(models.Model):
 
     name = models.CharField(max_length=100)
 
-    order = models.FloatField()
+    order = models.IntegerField()
 
     is_visible = models.BooleanField(default=True)
 
@@ -129,7 +129,7 @@ class Block(models.Model):
         choices=BlockType.choices
     )
 
-    order = models.FloatField()
+    order = models.IntegerField()
 
     # Layout-specific configuration (columns, variant, etc.)
     config = models.JSONField(default=dict)
@@ -194,7 +194,9 @@ class Element(models.Model):
         choices=DataField.choices
     )
 
-    order = models.FloatField()
+    config = models.JSONField(default=dict)
+
+    order = models.IntegerField()
 
     is_visible = models.BooleanField(default=True)
 
@@ -233,7 +235,7 @@ class Project(models.Model):
         blank=True,
     )
 
-    order = models.FloatField(default=0)
+    order = models.IntegerField(default=0)
     is_visible = models.BooleanField(default=True)
 
     class Meta:
@@ -253,7 +255,7 @@ class Skill(models.Model):
     name = models.CharField(max_length=100)
     level = models.IntegerField()
 
-    order = models.FloatField(default=0)
+    order = models.IntegerField(default=0)
     is_visible = models.BooleanField(default=True)
 
     class Meta:
@@ -274,7 +276,7 @@ class Experience(models.Model):
     role = models.CharField(max_length=200)
     timeline = models.CharField(max_length=100)
 
-    order = models.FloatField(default=0)
+    order = models.IntegerField(default=0)
     is_visible = models.BooleanField(default=True)
 
     class Meta:
