@@ -439,6 +439,105 @@ class PortfolioService:
         instance.delete()
 
 
+class ProjectService:
+    _ALLOWED_FIELDS = {"title", "description", "github_url", "image", "order", "is_visible"}
+
+    def _resolve_portfolio(self, *, portfolio_id: int, user) -> Portfolio:
+        try:
+            portfolio = Portfolio.objects.get(id=portfolio_id)
+        except Portfolio.DoesNotExist:
+            raise NotFound("Portfolio not found.")
+
+        if portfolio.user_id != user.id:
+            raise PermissionDenied("You do not have permission to access this portfolio.")
+
+        return portfolio
+
+    def _ensure_project_belongs_to_portfolio(self, *, project: Project, portfolio: Portfolio) -> None:
+        if project.portfolio_id != portfolio.id:
+            raise PermissionDenied("Project does not belong to this portfolio.")
+
+    def _reject_unknown_fields(self, payload: Any) -> None:
+        keys = set(getattr(payload, "keys", lambda: [])())
+        unknown = keys - self._ALLOWED_FIELDS
+        if unknown:
+            raise ValidationError({key: "Unknown field." for key in sorted(unknown)})
+
+    def list(self, portfolio_id: int, user) -> QuerySet[Project]:
+        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        return Project.objects.filter(portfolio=resolved_portfolio).order_by("order", "id")
+
+    def retrieve(self, portfolio_id: int, project_id: int, user) -> Project:
+        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+
+        try:
+            project = Project.objects.select_related("portfolio").get(
+                id=project_id,
+                portfolio=resolved_portfolio,
+            )
+        except Project.DoesNotExist:
+            raise NotFound("Project not found.")
+
+        return project
+
+    @transaction.atomic
+    def create(self, portfolio_id: int, user, validated_data: Dict[str, Any]) -> Project:
+        self._reject_unknown_fields(validated_data)
+        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+
+        payload = dict(validated_data)
+        if "order" not in payload or payload.get("order") is None:
+            last_order = (
+                Project.objects.filter(portfolio=resolved_portfolio)
+                .order_by("-order", "-id")
+                .values_list("order", flat=True)
+                .first()
+            )
+            payload["order"] = (last_order + 1) if last_order is not None else 0
+
+        instance = Project(portfolio=resolved_portfolio, **payload)
+
+        try:
+            instance.full_clean(exclude=None)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict or {"detail": exc.messages})
+
+        try:
+            instance.save()
+        except IntegrityError:
+            raise ValidationError({"detail": "Could not create project."})
+
+        return instance
+
+    @transaction.atomic
+    def update(self, instance: Project, portfolio_id: int, user, validated_data: Dict[str, Any]) -> Project:
+        self._reject_unknown_fields(validated_data)
+        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        self._ensure_project_belongs_to_portfolio(project=instance, portfolio=resolved_portfolio)
+
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+
+        # Enforce invariant that a project must always remain attached to the scoped portfolio.
+        instance.portfolio = resolved_portfolio
+
+        try:
+            instance.full_clean(exclude=None)
+            instance.save()
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict or {"detail": exc.messages})
+        except IntegrityError:
+            raise ValidationError({"detail": "Could not update project."})
+
+        return instance
+
+    @transaction.atomic
+    def delete(self, instance: Project, portfolio_id: int, user) -> None:
+        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        self._ensure_project_belongs_to_portfolio(project=instance, portfolio=resolved_portfolio)
+        instance.delete()
+
+
 class AuthService:
     def register(self, *, username: str, password: str, email: str | None = None) -> Dict[str, str]:
         User = get_user_model()

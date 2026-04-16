@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
+from django.http.request import RawPostDataException
 
 
 logger = logging.getLogger("portfolio.request")
@@ -66,9 +67,19 @@ def _get_request_payload(request: HttpRequest) -> dict[str, Any]:
         content_type = (request.META.get("CONTENT_TYPE") or "").lower()
 
         if "application/json" in content_type:
-            body_obj = _safe_json_loads(getattr(request, "body", b"") or b"")
+            try:
+                raw_body = request.body
+            except RawPostDataException:
+                # DRF may consume the stream before middleware logging runs.
+                raw_body = getattr(request, "_body", b"") or b""
+
+            body_obj = _safe_json_loads(raw_body)
             if body_obj is not None:
                 payload["data"] = _redact(body_obj)
+            elif raw_body:
+                payload["data"] = "<invalid-json>"
+            else:
+                payload["data"] = "<unavailable: body stream consumed>"
 
         elif "application/x-www-form-urlencoded" in content_type:
             payload["data"] = _redact(request.POST.dict())

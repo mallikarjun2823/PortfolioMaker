@@ -6,8 +6,10 @@ class IsOwner(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
 
-        owner_id = getattr(obj, "user_id", None)
-        if owner_id is None and getattr(obj, "portfolio", None) is not None:
-            owner_id = getattr(obj.portfolio, "user_id", None)
+        # Child entities (e.g., Project) derive ownership from their parent Portfolio.
+        portfolio = getattr(obj, "portfolio", None)
+        if portfolio is not None:
+            return getattr(portfolio, "user_id", None) == request.user.id
 
+        owner_id = getattr(obj, "user_id", None)
         return owner_id == request.user.id

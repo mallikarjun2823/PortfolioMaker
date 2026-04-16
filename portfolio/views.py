@@ -10,15 +10,20 @@ from .serializers import (
     AuthResponseSerializer,
     LoginSerializer,
     PortfolioCreateSerializer,
-    PortfolioResponseSerializer,
     PortfolioPatchSerializer,
     PortfolioPutSerializer,
+    PortfolioResponseSerializer,
+    ProjectCreateSerializer,
+    ProjectPatchSerializer,
+    ProjectPutSerializer,
+    ProjectResponseSerializer,
     RegisterSerializer,
 )
-from .services import AuthService, PortfolioService
+from .services import AuthService, PortfolioService, ProjectService
 
 
 class RegisterAPIView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -30,6 +35,7 @@ class RegisterAPIView(APIView):
 
 
 class LoginAPIView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -90,4 +96,71 @@ class PortfolioDetailAPIView(APIView):
     def delete(self, request, pk: int):
         portfolio = self._get_object(request, pk)
         self.service.delete(user=request.user, instance=portfolio)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ProjectService()
+
+    def get(self, request, portfolio_id: int):
+        projects = self.service.list(portfolio_id=portfolio_id, user=request.user)
+        serializer = ProjectResponseSerializer(projects, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, portfolio_id: int):
+        serializer = ProjectCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        project = self.service.create(
+            portfolio_id=portfolio_id,
+            user=request.user,
+            validated_data=serializer.validated_data,
+        )
+        response = ProjectResponseSerializer(project)
+        return Response(response.data, status=status.HTTP_201_CREATED)
+
+
+class ProjectDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsOwner]
+    service = ProjectService()
+
+    def _get_object(self, request, portfolio_id: int, project_id: int):
+        project = self.service.retrieve(portfolio_id=portfolio_id, project_id=project_id, user=request.user)
+        self.check_object_permissions(request, project)
+        return project
+
+    def get(self, request, portfolio_id: int, project_id: int):
+        project = self._get_object(request, portfolio_id, project_id)
+        serializer = ProjectResponseSerializer(project)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, portfolio_id: int, project_id: int):
+        project = self._get_object(request, portfolio_id, project_id)
+        serializer = ProjectPutSerializer(project, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        project = self.service.update(
+            instance=project,
+            portfolio_id=portfolio_id,
+            user=request.user,
+            validated_data=serializer.validated_data,
+        )
+        response = ProjectResponseSerializer(project)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, portfolio_id: int, project_id: int):
+        project = self._get_object(request, portfolio_id, project_id)
+        serializer = ProjectPatchSerializer(project, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        project = self.service.update(
+            instance=project,
+            portfolio_id=portfolio_id,
+            user=request.user,
+            validated_data=serializer.validated_data,
+        )
+        response = ProjectResponseSerializer(project)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, portfolio_id: int, project_id: int):
+        project = self._get_object(request, portfolio_id, project_id)
+        self.service.delete(instance=project, portfolio_id=portfolio_id, user=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

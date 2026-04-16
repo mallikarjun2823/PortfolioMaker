@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Portfolio
+from .models import Portfolio, Project
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -89,5 +89,82 @@ class PortfolioPatchSerializer(serializers.ModelSerializer):
             "description": {"required": False, "allow_blank": True},
             "theme": {"required": False, "allow_null": True},
             "is_published": {"required": False},
+        }
+
+
+class ProjectResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = [
+            "id",
+            "portfolio",
+            "title",
+            "description",
+            "github_url",
+            "image",
+            "order",
+            "is_visible",
+        ]
+        read_only_fields = fields
+
+
+class ProjectCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = [
+            "title",
+            "description",
+            "github_url",
+            "image",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "github_url": {"required": False, "allow_null": True, "allow_blank": True},
+            "image": {"required": False, "allow_null": True},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+        }
+
+
+class ProjectPutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = [
+            "title",
+            "description",
+            "github_url",
+            "image",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "title": {"required": True},
+            "description": {"required": True},
+            "github_url": {"required": True, "allow_null": True, "allow_blank": True},
+            "image": {"required": True, "allow_null": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+        }
+
+
+class ProjectPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = [
+            "title",
+            "description",
+            "github_url",
+            "image",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "title": {"required": False},
+            "description": {"required": False},
+            "github_url": {"required": False, "allow_null": True, "allow_blank": True},
+            "image": {"required": False, "allow_null": True},
+            "order": {"required": False},
+            "is_visible": {"required": False},
         }
 
