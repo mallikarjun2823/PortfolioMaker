@@ -439,8 +439,13 @@ class PortfolioService:
         instance.delete()
 
 
-class ProjectService:
-    _ALLOWED_FIELDS = {"title", "description", "github_url", "image", "order", "is_visible"}
+class BasePortfolioChildService:
+    model = None
+    allowed_fields: set[str] = set()
+    not_found_message = "Object not found."
+    create_error_message = "Could not create object."
+    update_error_message = "Could not update object."
+    ownership_error_message = "Object does not belong to this portfolio."
 
     def _resolve_portfolio(self, *, portfolio_id: int, user) -> Portfolio:
         try:
@@ -453,49 +458,49 @@ class ProjectService:
 
         return portfolio
 
-    def _ensure_project_belongs_to_portfolio(self, *, project: Project, portfolio: Portfolio) -> None:
-        if project.portfolio_id != portfolio.id:
-            raise PermissionDenied("Project does not belong to this portfolio.")
-
-    def _reject_unknown_fields(self, payload: Any) -> None:
-        keys = set(getattr(payload, "keys", lambda: [])())
-        unknown = keys - self._ALLOWED_FIELDS
+    def _reject_unknown_fields(self, validated_data: Any) -> None:
+        keys = set(getattr(validated_data, "keys", lambda: [])())
+        unknown = keys - self.allowed_fields
         if unknown:
             raise ValidationError({key: "Unknown field." for key in sorted(unknown)})
 
-    def list(self, portfolio_id: int, user) -> QuerySet[Project]:
-        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        return Project.objects.filter(portfolio=resolved_portfolio).order_by("order", "id")
+    def _get_queryset(self, portfolio: Portfolio) -> QuerySet:
+        return self.model.objects.filter(portfolio=portfolio)
 
-    def retrieve(self, portfolio_id: int, project_id: int, user) -> Project:
-        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+    def _ensure_belongs_to_portfolio(self, *, instance, portfolio: Portfolio) -> None:
+        if getattr(instance, "portfolio_id", None) != portfolio.id:
+            raise PermissionDenied(self.ownership_error_message)
 
-        try:
-            project = Project.objects.select_related("portfolio").get(
-                id=project_id,
-                portfolio=resolved_portfolio,
-            )
-        except Project.DoesNotExist:
-            raise NotFound("Project not found.")
-
-        return project
-
-    @transaction.atomic
-    def create(self, portfolio_id: int, user, validated_data: Dict[str, Any]) -> Project:
-        self._reject_unknown_fields(validated_data)
-        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-
+    def _with_auto_order(self, *, portfolio: Portfolio, validated_data: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(validated_data)
         if "order" not in payload or payload.get("order") is None:
             last_order = (
-                Project.objects.filter(portfolio=resolved_portfolio)
+                self._get_queryset(portfolio)
                 .order_by("-order", "-id")
                 .values_list("order", flat=True)
                 .first()
             )
             payload["order"] = (last_order + 1) if last_order is not None else 0
+        return payload
 
-        instance = Project(portfolio=resolved_portfolio, **payload)
+    def list(self, *, portfolio_id: int, user) -> QuerySet:
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        return self._get_queryset(portfolio).order_by("order", "id")
+
+    def retrieve(self, *, portfolio_id: int, object_id: int, user):
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        try:
+            return self._get_queryset(portfolio).select_related("portfolio").get(id=object_id)
+        except self.model.DoesNotExist:
+            raise NotFound(self.not_found_message)
+
+    @transaction.atomic
+    def create(self, *, portfolio_id: int, user, validated_data: Dict[str, Any]):
+        self._reject_unknown_fields(validated_data)
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        payload = self._with_auto_order(portfolio=portfolio, validated_data=validated_data)
+
+        instance = self.model(portfolio=portfolio, **payload)
 
         try:
             instance.full_clean(exclude=None)
@@ -505,21 +510,20 @@ class ProjectService:
         try:
             instance.save()
         except IntegrityError:
-            raise ValidationError({"detail": "Could not create project."})
+            raise ValidationError({"detail": self.create_error_message})
 
         return instance
 
     @transaction.atomic
-    def update(self, instance: Project, portfolio_id: int, user, validated_data: Dict[str, Any]) -> Project:
+    def update(self, *, instance, portfolio_id: int, user, validated_data: Dict[str, Any]):
         self._reject_unknown_fields(validated_data)
-        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        self._ensure_project_belongs_to_portfolio(project=instance, portfolio=resolved_portfolio)
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        self._ensure_belongs_to_portfolio(instance=instance, portfolio=portfolio)
 
         for key, value in validated_data.items():
             setattr(instance, key, value)
 
-        # Enforce invariant that a project must always remain attached to the scoped portfolio.
-        instance.portfolio = resolved_portfolio
+        instance.portfolio = portfolio
 
         try:
             instance.full_clean(exclude=None)
@@ -527,15 +531,51 @@ class ProjectService:
         except DjangoValidationError as exc:
             raise ValidationError(exc.message_dict or {"detail": exc.messages})
         except IntegrityError:
-            raise ValidationError({"detail": "Could not update project."})
+            raise ValidationError({"detail": self.update_error_message})
 
         return instance
 
     @transaction.atomic
-    def delete(self, instance: Project, portfolio_id: int, user) -> None:
-        resolved_portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        self._ensure_project_belongs_to_portfolio(project=instance, portfolio=resolved_portfolio)
+    def delete(self, *, instance, portfolio_id: int, user) -> None:
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        self._ensure_belongs_to_portfolio(instance=instance, portfolio=portfolio)
         instance.delete()
+
+
+class ProjectService(BasePortfolioChildService):
+    model = Project
+    allowed_fields = {"title", "description", "github_url", "image", "order", "is_visible"}
+    not_found_message = "Project not found."
+    create_error_message = "Could not create project."
+    update_error_message = "Could not update project."
+    ownership_error_message = "Project does not belong to this portfolio."
+
+    def retrieve(self, *, portfolio_id: int, project_id: int, user) -> Project:
+        return super().retrieve(portfolio_id=portfolio_id, object_id=project_id, user=user)
+
+
+class SkillService(BasePortfolioChildService):
+    model = Skill
+    allowed_fields = {"name", "level", "order", "is_visible"}
+    not_found_message = "Skill not found."
+    create_error_message = "Could not create skill."
+    update_error_message = "Could not update skill."
+    ownership_error_message = "Skill does not belong to this portfolio."
+
+    def retrieve(self, *, portfolio_id: int, skill_id: int, user) -> Skill:
+        return super().retrieve(portfolio_id=portfolio_id, object_id=skill_id, user=user)
+
+
+class ExperienceService(BasePortfolioChildService):
+    model = Experience
+    allowed_fields = {"company", "role", "timeline", "order", "is_visible"}
+    not_found_message = "Experience not found."
+    create_error_message = "Could not create experience."
+    update_error_message = "Could not update experience."
+    ownership_error_message = "Experience does not belong to this portfolio."
+
+    def retrieve(self, *, portfolio_id: int, experience_id: int, user) -> Experience:
+        return super().retrieve(portfolio_id=portfolio_id, object_id=experience_id, user=user)
 
 
 class AuthService:

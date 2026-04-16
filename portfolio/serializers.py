@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Portfolio, Project
+from .models import Experience, Portfolio, Project, Skill
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -164,6 +164,138 @@ class ProjectPatchSerializer(serializers.ModelSerializer):
             "description": {"required": False},
             "github_url": {"required": False, "allow_null": True, "allow_blank": True},
             "image": {"required": False, "allow_null": True},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+        }
+
+
+class SkillResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = [
+            "id",
+            "portfolio",
+            "name",
+            "level",
+            "order",
+            "is_visible",
+        ]
+        read_only_fields = fields
+
+
+class SkillCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = [
+            "name",
+            "level",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "order": {"required": False},
+            "is_visible": {"required": False},
+        }
+
+
+class SkillPutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = [
+            "name",
+            "level",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "name": {"required": True},
+            "level": {"required": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+        }
+
+
+class SkillPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = [
+            "name",
+            "level",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "name": {"required": False},
+            "level": {"required": False},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+        }
+
+
+class ExperienceResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Experience
+        fields = [
+            "id",
+            "portfolio",
+            "company",
+            "role",
+            "timeline",
+            "order",
+            "is_visible",
+        ]
+        read_only_fields = fields
+
+
+class ExperienceCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Experience
+        fields = [
+            "company",
+            "role",
+            "timeline",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "order": {"required": False},
+            "is_visible": {"required": False},
+        }
+
+
+class ExperiencePutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Experience
+        fields = [
+            "company",
+            "role",
+            "timeline",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "company": {"required": True},
+            "role": {"required": True},
+            "timeline": {"required": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+        }
+
+
+class ExperiencePatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Experience
+        fields = [
+            "company",
+            "role",
+            "timeline",
+            "order",
+            "is_visible",
+        ]
+        extra_kwargs = {
+            "company": {"required": False},
+            "role": {"required": False},
+            "timeline": {"required": False},
             "order": {"required": False},
             "is_visible": {"required": False},
         }

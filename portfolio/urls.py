@@ -17,4 +17,24 @@ urlpatterns = [
         views.ProjectDetailAPIView.as_view(),
         name="project-detail",
     ),
+    path(
+        "portfolios/<int:portfolio_id>/skills/",
+        views.SkillListCreateAPIView.as_view(),
+        name="skill-list-create",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/skills/<int:skill_id>/",
+        views.SkillDetailAPIView.as_view(),
+        name="skill-detail",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/experiences/",
+        views.ExperienceListCreateAPIView.as_view(),
+        name="experience-list-create",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/experiences/<int:experience_id>/",
+        views.ExperienceDetailAPIView.as_view(),
+        name="experience-detail",
+    ),
 ]
