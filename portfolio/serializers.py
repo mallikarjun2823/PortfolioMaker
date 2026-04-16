@@ -21,5 +21,73 @@ class AuthResponseSerializer(serializers.Serializer):
     refresh = serializers.CharField(read_only=True)
 
 
-class PortfolioSerializer(serializers.ModelSerializer):
-    pass
+class PortfolioResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portfolio
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "description",
+            "theme",
+            "is_published",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+class PortfolioCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portfolio
+        fields = [
+            "title",
+            "slug",
+            "description",
+            "theme",
+            "is_published",
+        ]
+        extra_kwargs = {
+            "slug": {"required": False, "allow_blank": True},
+            "description": {"required": False, "allow_blank": True},
+            "theme": {"required": False, "allow_null": True},
+            "is_published": {"required": False},
+        }
+
+
+class PortfolioPutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portfolio
+        fields = [
+            "title",
+            "slug",
+            "description",
+            "theme",
+            "is_published",
+        ]
+        extra_kwargs = {
+            # Strict PUT: require all updatable fields (slug can be blank to trigger auto-generation in service)
+            "slug": {"required": True, "allow_blank": True},
+            "description": {"required": True, "allow_blank": True},
+            "theme": {"required": True, "allow_null": True},
+            "is_published": {"required": True},
+        }
+
+
+class PortfolioPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portfolio
+        fields = [
+            "title",
+            "slug",
+            "description",
+            "theme",
+            "is_published",
+        ]
+        extra_kwargs = {
+            "title": {"required": False},
+            "slug": {"required": False, "allow_blank": True},
+            "description": {"required": False, "allow_blank": True},
+            "theme": {"required": False, "allow_null": True},
+            "is_published": {"required": False},
+        }
+

@@ -48,18 +48,20 @@ class Portfolio(models.Model):
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name="portfolios"
+        related_name="portfolios",
     )
 
     title = models.CharField(max_length=100)
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField()
 
     description = models.TextField(blank=True, default="")
 
     theme = models.ForeignKey(
         Theme,
         on_delete=models.PROTECT,
-        related_name="portfolios"
+        related_name="portfolios",
+        null=True,
+        blank=True,
     )
 
     is_published = models.BooleanField(default=False)
@@ -68,6 +70,9 @@ class Portfolio(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "slug"], name="uniq_portfolio_user_slug"),
+        ]
         indexes = [
             models.Index(fields=["user"]),
             models.Index(fields=["slug"]),
