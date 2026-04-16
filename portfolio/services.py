@@ -3,9 +3,16 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Any, Dict, Iterable, List, Sequence
 
-from django.core.exceptions import FieldError
+from django.core.exceptions import FieldError, ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.db.models.fields.files import FieldFile
+
+from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Block, Element, Experience, Portfolio, Project, Section, Skill
 
@@ -167,7 +174,7 @@ def _fetch_sections(portfolio: Portfolio) -> List[Dict[str, Any]]:
     ]
 
 
-class PortfolioDetailService:
+class PortfolioRenderService:
     def render_portfolio(self, portfolio_id: int, user_id: int) -> Dict[str, Any]:
         try:
             portfolio = (
@@ -189,3 +196,43 @@ class PortfolioDetailService:
                 "sections": _fetch_sections(portfolio),
             }
         }
+
+class PortfolioService:
+    pass
+
+
+class AuthService:
+    def register(self, *, username: str, password: str, email: str | None = None) -> Dict[str, str]:
+        User = get_user_model()
+
+        normalized_email = (email or "").strip() or None
+
+        if User.objects.filter(username=username).exists():
+            raise ValidationError({"username": "A user with this username already exists."})
+
+        if normalized_email and User.objects.filter(email=normalized_email).exists():
+            raise ValidationError({"email": "A user with this email already exists."})
+
+        try:
+            validate_password(password)
+        except DjangoValidationError as exc:
+            raise ValidationError({"password": exc.messages})
+
+        try:
+            user = User.objects.create_user(username=username, email=normalized_email, password=password)
+        except IntegrityError:
+            raise ValidationError({"detail": "Could not create user."})
+
+        refresh = RefreshToken.for_user(user)
+        return {"refresh": str(refresh), "access": str(refresh.access_token)}
+
+    def login(self, *, username: str, password: str) -> Dict[str, str]:
+        user = authenticate(username=username, password=password)
+        if user is None:
+            raise AuthenticationFailed("Invalid username or password")
+
+        if not user.is_active:
+            raise AuthenticationFailed("User account is disabled")
+
+        refresh = RefreshToken.for_user(user)
+        return {"refresh": str(refresh), "access": str(refresh.access_token)}
