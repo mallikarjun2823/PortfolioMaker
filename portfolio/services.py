@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from datetime import date, datetime, time
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -16,6 +18,9 @@ from rest_framework.exceptions import AuthenticationFailed, NotFound, Permission
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Block, Element, Experience, Portfolio, Project, Section, Skill, Theme
+
+
+service_logger = logging.getLogger("portfolio.service")
 
 
 OPERATOR_MAP = {
@@ -314,6 +319,11 @@ class PortfolioService:
 
     @transaction.atomic
     def create(self, *, user, validated_data: Dict[str, Any]) -> Portfolio:
+        service_logger.info(
+            "portfolio.create user_id=%s keys=%s",
+            getattr(user, "id", None),
+            sorted(list(validated_data.keys())),
+        )
         self._reject_unknown_fields(validated_data)
 
         if validated_data.get("title", None) is None:
@@ -366,6 +376,12 @@ class PortfolioService:
 
     @transaction.atomic
     def update(self, *, user, instance: Portfolio, validated_data: Dict[str, Any]) -> Portfolio:
+        service_logger.info(
+            "portfolio.update user_id=%s portfolio_id=%s keys=%s",
+            getattr(user, "id", None),
+            getattr(instance, "id", None),
+            sorted(list(validated_data.keys())),
+        )
         self._ensure_owner(user=user, portfolio=instance)
 
         payload = validated_data
@@ -414,6 +430,11 @@ class PortfolioService:
 
     @transaction.atomic
     def delete(self, *, user, instance: Portfolio) -> None:
+        service_logger.info(
+            "portfolio.delete user_id=%s portfolio_id=%s",
+            getattr(user, "id", None),
+            getattr(instance, "id", None),
+        )
         self._ensure_owner(user=user, portfolio=instance)
         instance.delete()
 
