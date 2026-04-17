@@ -98,9 +98,7 @@ class Section(models.Model):
     order = models.IntegerField()
 
     is_visible = models.BooleanField(default=True)
-
-    # Typography / presentation hints (controlled)
-    config = models.JSONField(default=dict)
+    config = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["order"]
@@ -139,7 +137,7 @@ class Block(models.Model):
     order = models.IntegerField()
 
     # Layout-specific configuration (columns, variant, etc.)
-    config = models.JSONField(default=dict)
+    config = models.JSONField(default=dict, blank=True)
 
     is_visible = models.BooleanField(default=True)
 
@@ -201,7 +199,7 @@ class Element(models.Model):
         choices=DataField.choices
     )
 
-    config = models.JSONField(default=dict)
+    config = models.JSONField(default=dict, blank=True)
 
     order = models.IntegerField()
 

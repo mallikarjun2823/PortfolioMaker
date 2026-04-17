@@ -37,4 +37,14 @@ urlpatterns = [
         views.ExperienceDetailAPIView.as_view(),
         name="experience-detail",
     ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/",
+        views.SectionListCreateAPIView.as_view(),
+        name="section-list-create",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/<int:section_id>/",
+        views.SectionDetailAPIView.as_view(),
+        name="section-detail",
+    ),
 ]

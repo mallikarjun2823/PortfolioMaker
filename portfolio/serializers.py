@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Experience, Portfolio, Project, Skill
+from .models import Experience, Portfolio, Project, Section, Skill
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -298,5 +298,99 @@ class ExperiencePatchSerializer(serializers.ModelSerializer):
             "timeline": {"required": False},
             "order": {"required": False},
             "is_visible": {"required": False},
+        }
+
+
+class SectionResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Section
+        fields = [
+            "id",
+            "portfolio",
+            "name",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        read_only_fields = fields
+
+
+class _BaseSectionWriteSerializer(serializers.ModelSerializer):
+    def validate_name(self, value: str) -> str:
+        name = "" if value is None else str(value)
+        name = name.strip()
+        if not name:
+            raise serializers.ValidationError("Name cannot be empty.")
+        return name
+
+    def validate_order(self, value: int) -> int:
+        if value is None:
+            return value
+
+        try:
+            order = int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("Order must be an integer.")
+
+        # Sections are typically 1-based in the seeded dataset and UI ordering.
+        if order < 1:
+            raise serializers.ValidationError("Order must be >= 1.")
+        return order
+
+    def validate_config(self, value):
+        if value is None:
+            raise serializers.ValidationError("Config must be an object.")
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Config must be an object.")
+        return value
+
+
+class SectionCreateSerializer(_BaseSectionWriteSerializer):
+    class Meta:
+        model = Section
+        fields = [
+            "name",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
+        }
+
+
+class SectionPutSerializer(_BaseSectionWriteSerializer):
+    class Meta:
+        model = Section
+        fields = [
+            "name",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "name": {"required": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+            "config": {"required": True},
+        }
+
+
+class SectionPatchSerializer(_BaseSectionWriteSerializer):
+    class Meta:
+        model = Section
+        fields = [
+            "name",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "name": {"required": False},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
         }
 

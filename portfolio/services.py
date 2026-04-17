@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 from django.core.exceptions import FieldError, ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import QuerySet
+from django.db.models import Prefetch, QuerySet
 from django.db.models.fields.files import FieldFile
 
 from django.contrib.auth import authenticate, get_user_model
@@ -115,17 +115,44 @@ def _apply_filters(queryset: QuerySet, filters: Sequence[Dict[str, Any]]) -> Que
     return queryset
 
 
+def _filters_cache_key(filters: Sequence[Dict[str, Any]]) -> tuple:
+    normalized: List[tuple] = []
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key")
+        operator = item.get("operator")
+        value = item.get("value")
+
+        if isinstance(value, list):
+            value_key = tuple(value)
+        elif isinstance(value, dict):
+            value_key = tuple(sorted(value.items()))
+        else:
+            value_key = value
+
+        normalized.append((key, operator, value_key))
+    return tuple(normalized)
+
+
 def _resolve_block_items(portfolio: Portfolio, elements: Iterable[Element]) -> List[Dict[str, Any]]:
     element_data: List[tuple[Element, List[Any]]] = []
     max_rows = 0
 
+    record_cache: Dict[tuple, List[Any]] = {}
+
     for element in elements:
-        queryset = _get_queryset(portfolio, element.data_source)
         config = _safe_config(element.config)
         filters = _normalize_filters(config.get("filters", []))
-        queryset = _apply_filters(queryset, filters)
+        cache_key = (element.data_source, _filters_cache_key(filters))
 
-        records = list(queryset)
+        records = record_cache.get(cache_key)
+        if records is None:
+            queryset = _get_queryset(portfolio, element.data_source)
+            queryset = _apply_filters(queryset, filters)
+            records = list(queryset)
+            record_cache[cache_key] = records
+
         max_rows = max(max_rows, len(records))
         element_data.append((element, records))
 
@@ -145,15 +172,21 @@ def _resolve_block_items(portfolio: Portfolio, elements: Iterable[Element]) -> L
 
 
 def _fetch_blocks(section: Section) -> List[Dict[str, Any]]:
+    visible_elements = Prefetch(
+        "elements",
+        queryset=Element.objects.filter(is_visible=True).order_by("order", "id"),
+        to_attr="_visible_elements",
+    )
+
     blocks = (
         Block.objects.filter(section=section, is_visible=True)
-        .prefetch_related("elements")
+        .prefetch_related(visible_elements)
         .order_by("order", "id")
     )
 
     rendered_blocks: List[Dict[str, Any]] = []
     for block in blocks:
-        elements = list(block.elements.filter(is_visible=True).order_by("order", "id"))
+        elements = list(getattr(block, "_visible_elements", []))
         items = _resolve_block_items(section.portfolio, elements)
 
         rendered_blocks.append(
@@ -447,16 +480,26 @@ class BasePortfolioChildService:
     update_error_message = "Could not update object."
     ownership_error_message = "Object does not belong to this portfolio."
 
-    def _resolve_portfolio(self, *, portfolio_id: int, user) -> Portfolio:
-        try:
-            portfolio = Portfolio.objects.get(id=portfolio_id)
-        except Portfolio.DoesNotExist:
+    def _resolve_portfolio(self, *, portfolio_id: int, user, for_update: bool = False) -> Portfolio:
+        qs = Portfolio.objects
+        if for_update:
+            qs = qs.select_for_update()
+
+        portfolio = qs.filter(id=portfolio_id, user_id=user.id).first()
+        if portfolio is None:
             raise NotFound("Portfolio not found.")
 
-        if portfolio.user_id != user.id:
-            raise PermissionDenied("You do not have permission to access this portfolio.")
-
         return portfolio
+
+    def _resolve_instance(self, *, portfolio_id: int, object_id: int, user, for_update: bool = False):
+        qs = self.model.objects.select_related("portfolio")
+        if for_update:
+            qs = qs.select_for_update()
+
+        try:
+            return qs.get(id=object_id, portfolio_id=portfolio_id, portfolio__user_id=user.id)
+        except self.model.DoesNotExist:
+            raise NotFound(self.not_found_message)
 
     def _reject_unknown_fields(self, validated_data: Any) -> None:
         keys = set(getattr(validated_data, "keys", lambda: [])())
@@ -467,9 +510,35 @@ class BasePortfolioChildService:
     def _get_queryset(self, portfolio: Portfolio) -> QuerySet:
         return self.model.objects.filter(portfolio=portfolio)
 
-    def _ensure_belongs_to_portfolio(self, *, instance, portfolio: Portfolio) -> None:
-        if getattr(instance, "portfolio_id", None) != portfolio.id:
-            raise PermissionDenied(self.ownership_error_message)
+    def _coerce_order(self, value: Any) -> int:
+        if value is None:
+            raise ValidationError({"order": "Order cannot be null."})
+
+        try:
+            order = int(value)
+        except (TypeError, ValueError):
+            raise ValidationError({"order": "Order must be an integer."})
+
+        return max(1, order)
+
+    def _lock_siblings(self, *, portfolio: Portfolio) -> List[Any]:
+        return list(
+            self._get_queryset(portfolio)
+            .select_for_update()
+            .order_by("order", "id")
+        )
+
+    def _resequence_orders(self, *, siblings: List[Any]) -> None:
+        changed: List[Any] = []
+        expected = 1
+        for instance in siblings:
+            if int(getattr(instance, "order", 0)) != expected:
+                instance.order = expected
+                changed.append(instance)
+            expected += 1
+
+        if changed:
+            self.model.objects.bulk_update(changed, ["order"])
 
     def _with_auto_order(self, *, portfolio: Portfolio, validated_data: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(validated_data)
@@ -480,7 +549,7 @@ class BasePortfolioChildService:
                 .values_list("order", flat=True)
                 .first()
             )
-            payload["order"] = (last_order + 1) if last_order is not None else 0
+            payload["order"] = (last_order + 1) if last_order is not None else 1
         return payload
 
     def list(self, *, portfolio_id: int, user) -> QuerySet:
@@ -488,17 +557,35 @@ class BasePortfolioChildService:
         return self._get_queryset(portfolio).order_by("order", "id")
 
     def retrieve(self, *, portfolio_id: int, object_id: int, user):
-        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        try:
-            return self._get_queryset(portfolio).select_related("portfolio").get(id=object_id)
-        except self.model.DoesNotExist:
-            raise NotFound(self.not_found_message)
+        return self._resolve_instance(portfolio_id=portfolio_id, object_id=object_id, user=user)
 
     @transaction.atomic
     def create(self, *, portfolio_id: int, user, validated_data: Dict[str, Any]):
         self._reject_unknown_fields(validated_data)
         portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        payload = self._with_auto_order(portfolio=portfolio, validated_data=validated_data)
+        payload = dict(validated_data)
+
+        siblings = self._lock_siblings(portfolio=portfolio)
+        self._resequence_orders(siblings=siblings)
+
+        desired_order = payload.get("order")
+        if desired_order is None:
+            desired_order = (siblings[-1].order + 1) if siblings else 1
+        else:
+            desired_order = self._coerce_order(desired_order)
+
+        max_allowed = len(siblings) + 1
+        desired_order = max(1, min(int(desired_order), max_allowed))
+        payload["order"] = desired_order
+
+        shifted: List[Any] = []
+        for sibling in siblings:
+            if int(getattr(sibling, "order", 0)) >= desired_order:
+                sibling.order = int(getattr(sibling, "order", 0)) + 1
+                shifted.append(sibling)
+
+        if shifted:
+            self.model.objects.bulk_update(shifted, ["order"])
 
         instance = self.model(portfolio=portfolio, **payload)
 
@@ -515,31 +602,386 @@ class BasePortfolioChildService:
         return instance
 
     @transaction.atomic
-    def update(self, *, instance, portfolio_id: int, user, validated_data: Dict[str, Any]):
+    def update(self, *, instance, user, validated_data: Dict[str, Any]):
         self._reject_unknown_fields(validated_data)
-        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        self._ensure_belongs_to_portfolio(instance=instance, portfolio=portfolio)
+        portfolio = self._resolve_portfolio(portfolio_id=instance.portfolio_id, user=user)
+
+        siblings = self._lock_siblings(portfolio=portfolio)
+        self._resequence_orders(siblings=siblings)
+
+        locked_instance = next((s for s in siblings if s.id == instance.id), None)
+        if locked_instance is None:
+            raise NotFound(self.not_found_message)
+
+        desired_order: int | None = None
+        if "order" in validated_data:
+            desired_order = self._coerce_order(validated_data.get("order"))
+            desired_order = max(1, min(int(desired_order), len(siblings)))
 
         for key, value in validated_data.items():
-            setattr(instance, key, value)
+            if key == "order":
+                continue
+            setattr(locked_instance, key, value)
 
-        instance.portfolio = portfolio
+        if desired_order is not None:
+            current_order = int(getattr(locked_instance, "order", 1))
+            if desired_order != current_order:
+                affected: List[Any] = []
+                if desired_order < current_order:
+                    for sibling in siblings:
+                        if sibling.id == locked_instance.id:
+                            continue
+                        if desired_order <= int(getattr(sibling, "order", 0)) < current_order:
+                            sibling.order = int(getattr(sibling, "order", 0)) + 1
+                            affected.append(sibling)
+                else:
+                    for sibling in siblings:
+                        if sibling.id == locked_instance.id:
+                            continue
+                        if current_order < int(getattr(sibling, "order", 0)) <= desired_order:
+                            sibling.order = int(getattr(sibling, "order", 0)) - 1
+                            affected.append(sibling)
+
+                if affected:
+                    self.model.objects.bulk_update(affected, ["order"])
+                locked_instance.order = desired_order
 
         try:
-            instance.full_clean(exclude=None)
-            instance.save()
+            locked_instance.full_clean(exclude=None)
+            locked_instance.save()
         except DjangoValidationError as exc:
             raise ValidationError(exc.message_dict or {"detail": exc.messages})
         except IntegrityError:
             raise ValidationError({"detail": self.update_error_message})
 
+        return locked_instance
+
+    @transaction.atomic
+    def delete(self, *, instance, user) -> None:
+        portfolio = self._resolve_portfolio(portfolio_id=instance.portfolio_id, user=user)
+
+        siblings = self._lock_siblings(portfolio=portfolio)
+        self._resequence_orders(siblings=siblings)
+
+        locked_instance = next((s for s in siblings if s.id == instance.id), None)
+        if locked_instance is None:
+            raise NotFound(self.not_found_message)
+
+        deleted_order = int(getattr(locked_instance, "order", 1))
+        locked_instance.delete()
+
+        affected: List[Any] = []
+        for sibling in siblings:
+            if sibling.id == locked_instance.id:
+                continue
+            if int(getattr(sibling, "order", 0)) > deleted_order:
+                sibling.order = int(getattr(sibling, "order", 0)) - 1
+                affected.append(sibling)
+
+        if affected:
+            self.model.objects.bulk_update(affected, ["order"])
+
+
+class SectionService:
+    allowed_fields = {"name", "order", "is_visible", "config"}
+    not_found_message = "Section not found."
+    create_error_message = "Could not create section."
+    update_error_message = "Could not update section."
+
+    def _normalize_name(self, value: Any) -> str:
+        name = "" if value is None else str(value)
+        name = name.strip()
+        if not name:
+            raise ValidationError({"name": "Name cannot be empty."})
+        return name
+
+    def _normalize_order(self, value: Any) -> int:
+        try:
+            order = int(value)
+        except (TypeError, ValueError):
+            raise ValidationError({"order": "Order must be an integer."})
+
+        # Sections are typically 1-based in the seeded dataset and UI ordering.
+        if order < 1:
+            raise ValidationError({"order": "Order must be >= 1."})
+        return order
+
+    def _normalize_config(self, value: Any) -> Dict[str, Any]:
+        if value is None:
+            raise ValidationError({"config": "Config must be an object."})
+        if not isinstance(value, dict):
+            raise ValidationError({"config": "Config must be an object."})
+        return value
+
+    def _resolve_portfolio(self, *, portfolio_id: int, user, for_update: bool = False) -> Portfolio:
+        qs = Portfolio.objects
+        if for_update:
+            qs = qs.select_for_update()
+        portfolio = qs.filter(id=portfolio_id, user_id=user.id).first()
+        if portfolio is None:
+            raise NotFound("Portfolio not found.")
+        return portfolio
+
+    def _resolve_section(self, *, portfolio_id: int, section_id: int, user, for_update: bool = False) -> Section:
+        qs = Section.objects.select_related("portfolio")
+        if for_update:
+            qs = qs.select_for_update()
+        try:
+            return qs.get(id=section_id, portfolio_id=portfolio_id, portfolio__user_id=user.id)
+        except Section.DoesNotExist:
+            raise NotFound(self.not_found_message)
+
+    def _reject_unknown_fields(self, validated_data: Any) -> None:
+        keys = set(getattr(validated_data, "keys", lambda: [])())
+        unknown = keys - self.allowed_fields
+        if unknown:
+            raise ValidationError({key: "Unknown field." for key in sorted(unknown)})
+
+    def _lock_sections(self, *, portfolio: Portfolio) -> List[Section]:
+        return list(
+            Section.objects.select_for_update()
+            .filter(portfolio=portfolio)
+            .order_by("order", "id")
+        )
+
+    def _resequence_orders(self, *, sections: List[Section]) -> None:
+        """Force stable, contiguous ordering (1..n) within a portfolio."""
+
+        changed: List[Section] = []
+        expected = 1
+        for section in sections:
+            if section.order != expected:
+                section.order = expected
+                changed.append(section)
+            expected += 1
+
+        if changed:
+            Section.objects.bulk_update(changed, ["order"])
+
+    def _maybe_unpublish_if_invalid(self, *, portfolio: Portfolio) -> None:
+        if not portfolio.is_published:
+            return
+
+        has_section = Section.objects.filter(portfolio_id=portfolio.pk).exists()
+        has_block = Block.objects.filter(section__portfolio_id=portfolio.pk).exists()
+
+        if has_section and has_block:
+            return
+
+        portfolio.is_published = False
+        portfolio.save(update_fields=["is_published", "updated_at"])
+
+    def list(self, *, portfolio_id: int, user) -> QuerySet[Section]:
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        return Section.objects.filter(portfolio=portfolio).order_by("order", "id")
+
+    def retrieve(self, *, portfolio_id: int, section_id: int, user) -> Section:
+        return self._resolve_section(portfolio_id=portfolio_id, section_id=section_id, user=user)
+
+    @transaction.atomic
+    def create(self, *, portfolio_id: int, user, validated_data: Dict[str, Any]) -> Section:
+        self._reject_unknown_fields(validated_data)
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+
+        payload = dict(validated_data)
+
+        if payload.get("name", None) is None:
+            raise ValidationError({"name": "This field is required."})
+
+        payload["name"] = self._normalize_name(payload.get("name"))
+        if "config" in payload:
+            payload["config"] = self._normalize_config(payload.get("config"))
+
+        sections = self._lock_sections(portfolio=portfolio)
+        self._resequence_orders(sections=sections)
+
+        desired_order = payload.get("order")
+        if desired_order is None:
+            desired_order = (sections[-1].order + 1) if sections else 1
+        else:
+            desired_order = self._normalize_order(desired_order)
+
+        max_allowed = len(sections) + 1
+        desired_order = max(1, min(int(desired_order), max_allowed))
+        payload["order"] = desired_order
+
+        # Insert behavior: shift existing sections down.
+        shifted: List[Section] = []
+        for section in sections:
+            if section.order >= desired_order:
+                section.order += 1
+                shifted.append(section)
+        if shifted:
+            Section.objects.bulk_update(shifted, ["order"])
+
+        instance = Section(portfolio=portfolio, **payload)
+
+        try:
+            instance.full_clean(exclude=None)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict or {"detail": exc.messages})
+
+        try:
+            instance.save()
+        except IntegrityError:
+            raise ValidationError({"detail": self.create_error_message})
+
         return instance
 
     @transaction.atomic
-    def delete(self, *, instance, portfolio_id: int, user) -> None:
+    def update(self, *, instance: Section, user, validated_data: Dict[str, Any]) -> Section:
+        self._reject_unknown_fields(validated_data)
+        portfolio = self._resolve_portfolio(portfolio_id=instance.portfolio_id, user=user)
+
+        sections = self._lock_sections(portfolio=portfolio)
+        self._resequence_orders(sections=sections)
+
+        locked_instance = next((s for s in sections if s.id == instance.id), None)
+        if locked_instance is None:
+            raise NotFound(self.not_found_message)
+
+        if "name" in validated_data:
+            locked_instance.name = self._normalize_name(validated_data.get("name"))
+        if "config" in validated_data:
+            locked_instance.config = self._normalize_config(validated_data.get("config"))
+        if "is_visible" in validated_data:
+            locked_instance.is_visible = validated_data.get("is_visible")
+
+        if "order" in validated_data:
+            desired_order = self._normalize_order(validated_data.get("order"))
+            desired_order = max(1, min(int(desired_order), len(sections)))
+            current_order = int(locked_instance.order)
+
+            if desired_order != current_order:
+                affected: List[Section] = []
+                if desired_order < current_order:
+                    for section in sections:
+                        if section.id == locked_instance.id:
+                            continue
+                        if desired_order <= int(section.order) < current_order:
+                            section.order = int(section.order) + 1
+                            affected.append(section)
+                else:
+                    for section in sections:
+                        if section.id == locked_instance.id:
+                            continue
+                        if current_order < int(section.order) <= desired_order:
+                            section.order = int(section.order) - 1
+                            affected.append(section)
+
+                if affected:
+                    Section.objects.bulk_update(affected, ["order"])
+                locked_instance.order = desired_order
+
+        try:
+            locked_instance.full_clean(exclude=None)
+            locked_instance.save()
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict or {"detail": exc.messages})
+        except IntegrityError:
+            raise ValidationError({"detail": self.update_error_message})
+
+        return locked_instance
+
+    @transaction.atomic
+    def delete(self, *, instance: Section, user) -> None:
+        portfolio = self._resolve_portfolio(portfolio_id=instance.portfolio_id, user=user)
+
+        sections = self._lock_sections(portfolio=portfolio)
+        self._resequence_orders(sections=sections)
+
+        locked_instance = next((s for s in sections if s.id == instance.id), None)
+        if locked_instance is None:
+            raise NotFound(self.not_found_message)
+
+        deleted_order = int(locked_instance.order)
+        locked_instance.delete()
+
+        affected: List[Section] = []
+        for section in sections:
+            if section.id == locked_instance.id:
+                continue
+            if int(section.order) > deleted_order:
+                section.order = int(section.order) - 1
+                affected.append(section)
+
+        if affected:
+            Section.objects.bulk_update(affected, ["order"])
+
+        self._maybe_unpublish_if_invalid(portfolio=portfolio)
+
+    @transaction.atomic
+    def reorder(self, *, portfolio_id: int, user, order_pairs: Sequence[tuple[int, int]]) -> List[Section]:
+        """Reorder sections using (section_id, desired_order) pairs.
+
+        Applies a stable sort and then resequences to contiguous 1..n.
+        """
+
         portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
-        self._ensure_belongs_to_portfolio(instance=instance, portfolio=portfolio)
-        instance.delete()
+        sections = self._lock_sections(portfolio=portfolio)
+        self._resequence_orders(sections=sections)
+
+        desired_map: Dict[int, int] = {}
+        for section_id, desired_order in order_pairs:
+            try:
+                desired_map[int(section_id)] = self._normalize_order(desired_order)
+            except (TypeError, ValueError):
+                raise ValidationError({"order": "Invalid reorder payload."})
+
+        ids = {s.id for s in sections}
+        unknown = sorted([sid for sid in desired_map.keys() if sid not in ids])
+        if unknown:
+            raise ValidationError({"detail": "One or more sections do not exist."})
+
+        def sort_key(section: Section) -> tuple:
+            desired = desired_map.get(section.id)
+            if desired is None:
+                return (10**9, int(section.order), section.id)
+            return (int(desired), int(section.order), section.id)
+
+        sections_sorted = sorted(sections, key=sort_key)
+        expected = 1
+        changed: List[Section] = []
+        for section in sections_sorted:
+            if section.order != expected:
+                section.order = expected
+                changed.append(section)
+            expected += 1
+
+        if changed:
+            Section.objects.bulk_update(changed, ["order"])
+
+        return list(Section.objects.filter(portfolio=portfolio).order_by("order", "id"))
+
+    @transaction.atomic
+    def bulk_create(self, *, portfolio_id: int, user, items: Sequence[Dict[str, Any]]) -> List[Section]:
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        created: List[Section] = []
+
+        for item in items:
+            self._reject_unknown_fields(item)
+            created.append(self.create(portfolio_id=portfolio.id, user=user, validated_data=dict(item)))
+
+        return created
+
+    @transaction.atomic
+    def bulk_update(self, *, portfolio_id: int, user, items: Sequence[Dict[str, Any]]) -> List[Section]:
+        portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
+        updated: List[Section] = []
+
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValidationError({"detail": "Invalid bulk update payload."})
+            section_id = item.get("id")
+            if section_id is None:
+                raise ValidationError({"id": "This field is required."})
+            instance = self._resolve_section(portfolio_id=portfolio.id, section_id=int(section_id), user=user)
+            payload = dict(item)
+            payload.pop("id", None)
+            self._reject_unknown_fields(payload)
+            updated.append(self.update(instance=instance, user=user, validated_data=payload))
+
+        return updated
 
 
 class ProjectService(BasePortfolioChildService):
