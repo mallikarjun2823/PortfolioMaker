@@ -37,6 +37,7 @@ from .serializers import (
     SkillPatchSerializer,
     SkillPutSerializer,
     SkillResponseSerializer,
+    ThemeResponseSerializer,
 )
 from .services import (
     AuthService,
@@ -49,6 +50,9 @@ from .services import (
     SectionService,
     SkillService,
 )
+
+from .models import Theme
+from .theme_presets import THEME_PRESETS
 
 
 class PortfolioRenderAPIView(APIView):
@@ -86,6 +90,29 @@ class LoginAPIView(APIView):
         tokens = AuthService().login(**serializer.validated_data)
         response = AuthResponseSerializer(tokens)
         return Response(response.data, status=status.HTTP_200_OK)
+
+
+class ThemeListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Ensure preset themes exist so the UI can always offer them.
+        for preset in THEME_PRESETS:
+            name = str(preset.get("name") or "").strip()
+            if not name:
+                continue
+            Theme.objects.update_or_create(
+                name=name,
+                defaults={
+                    "config": dict(preset.get("config") or {}),
+                    "is_active": True,
+                    "is_default": bool(preset.get("is_default", False)),
+                },
+            )
+
+        themes = Theme.objects.filter(is_active=True).order_by("-is_default", "name", "id")
+        serializer = ThemeResponseSerializer(themes, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class PortfolioAPIView(APIView):

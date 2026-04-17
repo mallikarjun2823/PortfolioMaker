@@ -21,12 +21,17 @@ export default function PortfoliosPage() {
   const [createTitle, setCreateTitle] = useState('')
   const [createSlug, setCreateSlug] = useState('')
   const [createDescription, setCreateDescription] = useState('')
+  const [createThemeId, setCreateThemeId] = useState('')
   const [creating, setCreating] = useState(false)
+
+  const [themes, setThemes] = useState([])
+  const [themesLoading, setThemesLoading] = useState(false)
 
   const [editingId, setEditingId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
   const [editSlug, setEditSlug] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editThemeId, setEditThemeId] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function load() {
@@ -44,6 +49,17 @@ export default function PortfoliosPage() {
 
   useEffect(() => {
     load()
+    ;(async () => {
+      setThemesLoading(true)
+      try {
+        const res = await api.listThemes(token)
+        setThemes(Array.isArray(res) ? res : [])
+      } catch {
+        setThemes([])
+      } finally {
+        setThemesLoading(false)
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -52,16 +68,19 @@ export default function PortfoliosPage() {
     setCreating(true)
     setError(null)
     try {
+      const rawThemeId = String(createThemeId || '').trim()
+      const themeValue = rawThemeId ? Number(rawThemeId) : null
       await api.createPortfolio(token, {
         title: createTitle,
         slug: createSlug,
         description: createDescription,
-        theme: null,
+        theme: Number.isFinite(themeValue) ? themeValue : null,
         is_published: false
       })
       setCreateTitle('')
       setCreateSlug('')
       setCreateDescription('')
+      setCreateThemeId('')
       alert('Portfolio created')
       await load()
     } catch (err) {
@@ -71,11 +90,48 @@ export default function PortfoliosPage() {
     }
   }
 
+  function renderThemeCard(theme, { selected, onSelect }) {
+    const cfg = (theme && theme.config && typeof theme.config === 'object') ? theme.config : {}
+    const primary = cfg.primary_color || '#111827'
+    const secondary = cfg.secondary_color || '#ffffff'
+    const text = cfg.text_color || '#ffffff'
+    const fontFamily = cfg.font_family || undefined
+    const alignment = (cfg.alignment || 'left')
+
+    return (
+      <button
+        key={theme.id}
+        type="button"
+        className={`themePickCard ${selected ? 'themePickCardSelected' : ''}`.trim()}
+        onClick={() => onSelect?.(String(theme.id))}
+      >
+        <div className="themePickPreview" style={{ background: primary, color: text, fontFamily, textAlign: alignment }}>
+          <div className="themePickTitle">Aa Portfolio</div>
+          <div className="themePickSub">Project • Skills • Experience</div>
+          <div className="themePickMiniCard" style={{ background: secondary, color: text }}>
+            <div className="themePickMiniRow" />
+            <div className="themePickMiniRow themePickMiniRowShort" />
+          </div>
+        </div>
+
+        <div className="themePickMeta">
+          <div className="themePickName">{theme.name}</div>
+          <div className="themePickSwatches">
+            <span className="themePickSwatch" style={{ background: primary }} />
+            <span className="themePickSwatch" style={{ background: secondary }} />
+            <span className="themePickSwatch" style={{ background: text }} />
+          </div>
+        </div>
+      </button>
+    )
+  }
+
   function startEdit(p) {
     setEditingId(p.id)
     setEditTitle(toStr(p.title))
     setEditSlug(toStr(p.slug))
     setEditDescription(toStr(p.description))
+    setEditThemeId(toStr(p.theme))
   }
 
   function cancelEdit() {
@@ -83,16 +139,20 @@ export default function PortfoliosPage() {
     setEditTitle('')
     setEditSlug('')
     setEditDescription('')
+    setEditThemeId('')
   }
 
   async function onSave(id) {
     setSaving(true)
     setError(null)
     try {
+      const rawThemeId = String(editThemeId || '').trim()
+      const themeValue = rawThemeId ? Number(rawThemeId) : null
       await api.updatePortfolio(token, id, {
         title: editTitle,
         slug: editSlug,
-        description: editDescription
+        description: editDescription,
+        theme: Number.isFinite(themeValue) ? themeValue : null
       })
       alert('Saved')
       cancelEdit()
@@ -143,6 +203,39 @@ export default function PortfoliosPage() {
             </Field>
           </div>
 
+          <Field label="Theme" hint="Pick a theme visually (optional)">
+            {themesLoading ? (
+              <div className="subtle">Loading themes…</div>
+            ) : (
+              <div className="themePickGrid">
+                <button
+                  type="button"
+                  className={`themePickCard ${!createThemeId ? 'themePickCardSelected' : ''}`.trim()}
+                  onClick={() => setCreateThemeId('')}
+                >
+                  <div className="themePickPreview" style={{ background: 'var(--card)', color: 'var(--text)' }}>
+                    <div className="themePickTitle">Default</div>
+                    <div className="themePickSub">Use app defaults</div>
+                    <div className="themePickMiniCard" style={{ background: 'rgba(17, 24, 39, 0.06)', color: 'var(--text)' }}>
+                      <div className="themePickMiniRow" />
+                      <div className="themePickMiniRow themePickMiniRowShort" />
+                    </div>
+                  </div>
+                  <div className="themePickMeta">
+                    <div className="themePickName">No theme</div>
+                    <div className="themePickSwatches">
+                      <span className="themePickSwatch" style={{ background: 'var(--bg)' }} />
+                      <span className="themePickSwatch" style={{ background: 'var(--card)' }} />
+                      <span className="themePickSwatch" style={{ background: 'var(--text)' }} />
+                    </div>
+                  </div>
+                </button>
+
+                {themes.map((t) => renderThemeCard(t, { selected: String(t.id) === String(createThemeId), onSelect: setCreateThemeId }))}
+              </div>
+            )}
+          </Field>
+
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <Button type="submit" disabled={creating || !createTitle.trim()}>
               {creating ? 'Creating…' : 'Create Portfolio'}
@@ -189,6 +282,39 @@ export default function PortfoliosPage() {
                     </Field>
                     <Field label="Description">
                       <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+                    </Field>
+
+                    <Field label="Theme" hint="Pick a theme visually (optional)">
+                      {themesLoading ? (
+                        <div className="subtle">Loading themes…</div>
+                      ) : (
+                        <div className="themePickGrid">
+                          <button
+                            type="button"
+                            className={`themePickCard ${!editThemeId ? 'themePickCardSelected' : ''}`.trim()}
+                            onClick={() => setEditThemeId('')}
+                          >
+                            <div className="themePickPreview" style={{ background: 'var(--card)', color: 'var(--text)' }}>
+                              <div className="themePickTitle">Default</div>
+                              <div className="themePickSub">Use app defaults</div>
+                              <div className="themePickMiniCard" style={{ background: 'rgba(17, 24, 39, 0.06)', color: 'var(--text)' }}>
+                                <div className="themePickMiniRow" />
+                                <div className="themePickMiniRow themePickMiniRowShort" />
+                              </div>
+                            </div>
+                            <div className="themePickMeta">
+                              <div className="themePickName">No theme</div>
+                              <div className="themePickSwatches">
+                                <span className="themePickSwatch" style={{ background: 'var(--bg)' }} />
+                                <span className="themePickSwatch" style={{ background: 'var(--card)' }} />
+                                <span className="themePickSwatch" style={{ background: 'var(--text)' }} />
+                              </div>
+                            </div>
+                          </button>
+
+                          {themes.map((t) => renderThemeCard(t, { selected: String(t.id) === String(editThemeId), onSelect: setEditThemeId }))}
+                        </div>
+                      )}
                     </Field>
 
                     <div className="row" style={{ justifyContent: 'flex-end' }}>

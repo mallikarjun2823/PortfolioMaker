@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Block, Element, Experience, Portfolio, Project, Section, Skill
+from .models import Block, Element, Experience, Portfolio, Project, Section, Skill, Theme
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -19,6 +19,13 @@ class LoginSerializer(serializers.Serializer):
 class AuthResponseSerializer(serializers.Serializer):
     access = serializers.CharField(read_only=True)
     refresh = serializers.CharField(read_only=True)
+
+
+class ThemeResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Theme
+        fields = ["id", "name", "config", "is_active", "is_default"]
+        read_only_fields = fields
 
 
 class PortfolioResponseSerializer(serializers.ModelSerializer):

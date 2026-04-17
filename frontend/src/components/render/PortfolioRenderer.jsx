@@ -99,47 +99,40 @@ export default function PortfolioRenderer({ payload }) {
     <div className="portfolioSite">
       <div className="portfolioBg" aria-hidden="true" />
 
-      <div className="portfolioContainer">
+      <header className="pfHero">
         <Reveal>
-          <section className="hero">
-            <div className="heroCard">
-              <div className="heroKicker">👋 Hi, I&apos;m</div>
-              <h1 className="heroTitle">
-                <span className="gradientText">{portfolio.title || 'Your Name'}</span>
-              </h1>
-              {tagline ? <div className="heroTagline">{tagline}</div> : null}
-              {portfolio.description ? (
-                <p className="heroDescription">{portfolio.description}</p>
+          <div className="pfHeroInner">
+            <div className="pfHeroKicker">Hi, I’m</div>
+            <h1 className="pfHeroTitle">{portfolio.title || 'Your Name'}</h1>
+            {tagline ? <div className="pfHeroTagline">{tagline}</div> : null}
+            {portfolio.description ? <p className="pfHeroDesc">{portfolio.description}</p> : null}
+
+            <div className="pfHeroActions">
+              {projectsSectionIndex >= 0 ? (
+                <button className="siteButton" onClick={() => scrollToId('projects')}>View Projects</button>
               ) : null}
-
-              <div className="heroActions">
-                {projectsSectionIndex >= 0 ? (
-                  <button className="siteButton" onClick={() => scrollToId('projects')}>View Projects</button>
-                ) : null}
-                {contactSectionIndex >= 0 ? (
-                  <button className="siteButton siteButtonGhost" onClick={() => scrollToId('contact')}>Contact</button>
-                ) : null}
-              </div>
+              {contactSectionIndex >= 0 ? (
+                <button className="siteButton siteButtonGhost" onClick={() => scrollToId('contact')}>Contact</button>
+              ) : null}
             </div>
-          </section>
+          </div>
         </Reveal>
+      </header>
 
-        {sections.map((section, idx) => (
-          <SectionRenderer
-            key={idx}
-            section={section}
-            index={idx}
-            anchorId={
-              idx === projectsSectionIndex
-                ? 'projects'
-                : idx === contactSectionIndex
-                  ? 'contact'
-                  : null
-            }
-          />
-        ))}
-
-      </div>
+      {sections.map((section, idx) => (
+        <SectionRenderer
+          key={idx}
+          section={section}
+          index={idx}
+          anchorId={
+            idx === projectsSectionIndex
+              ? 'projects'
+              : idx === contactSectionIndex
+                ? 'contact'
+                : null
+          }
+        />
+      ))}
     </div>
   )
 }

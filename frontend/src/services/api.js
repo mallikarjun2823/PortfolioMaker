@@ -69,6 +69,9 @@ export const api = {
   login: (payload) => apiRequest('/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => apiRequest('/auth/register/', { method: 'POST', body: payload }),
 
+  // themes
+  listThemes: (token) => apiRequest('/themes/', { token }),
+
   // portfolios
   listPortfolios: (token) => apiRequest('/portfolios/', { token }),
   createPortfolio: (token, payload) => apiRequest('/portfolios/', { method: 'POST', token, body: payload }),

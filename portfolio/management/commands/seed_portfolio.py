@@ -1,6 +1,10 @@
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+
+import base64
+import os
 
 from portfolio.models import (
     Theme,
@@ -13,48 +17,56 @@ from portfolio.models import (
     Experience,
 )
 
+from portfolio.theme_presets import THEME_PRESETS
+
 
 class Command(BaseCommand):
     help = "Seed realistic dummy data for the portfolio system"
 
+    _PLACEHOLDER_PNG_BYTES = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/Up1v0sAAAAASUVORK5CYII="
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--password",
+            type=str,
+            default="demo12345",
+            help="Password to set for the seeded users (dev only).",
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
         User = get_user_model()
+
+        seed_password = str(options.get("password") or "demo12345")
 
         # 1. Users
         mallikarjun = self._upsert_user(
             User,
             username="mallikarjun",
             email="malli.dev@example.com",
+            password=seed_password,
         )
         ananya = self._upsert_user(
             User,
             username="ananya",
             email="ananya.ui@example.com",
+            password=seed_password,
         )
 
         # 2. Themes (industry-style, production-like)
-        minimal_dark = self._upsert_theme(
-            name="Minimal Dark",
-            config={
-                "primary_color": "#0f172a",
-                "secondary_color": "#1e293b",
-                "text_color": "#e2e8f0",
-                "font_family": "Inter",
-                "alignment": "left",
-            },
-        )
+        themes_by_name = {}
+        for theme_def in THEME_PRESETS:
+            theme = self._upsert_theme(
+                name=str(theme_def.get("name")),
+                config=dict(theme_def.get("config") or {}),
+                is_default=bool(theme_def.get("is_default", False)),
+            )
+            themes_by_name[theme.name] = theme
 
-        modern_light = self._upsert_theme(
-            name="Modern Light",
-            config={
-                "primary_color": "#ffffff",
-                "secondary_color": "#f1f5f9",
-                "text_color": "#0f172a",
-                "font_family": "Poppins",
-                "alignment": "center",
-            },
-        )
+        minimal_dark = themes_by_name["Minimal Dark"]
+        modern_light = themes_by_name["Modern Light"]
 
         # 3. Portfolios
         mallikarjun_portfolio = self._upsert_portfolio(
@@ -86,20 +98,27 @@ class Command(BaseCommand):
         self._build_portfolio(portfolio=ananya_portfolio, persona="designer")
 
         self.stdout.write(self.style.SUCCESS("Seed data created successfully."))
+        self.stdout.write(f"Seeded users: mallikarjun / {seed_password}")
+        self.stdout.write(f"Seeded users: ananya / {seed_password}")
 
-    def _upsert_user(self, User, *, username: str, email: str):
+    def _upsert_user(self, User, *, username: str, email: str, password: str):
         user, _ = User.objects.get_or_create(username=username, defaults={"email": email})
         if user.email != email:
             user.email = email
             user.save(update_fields=["email"])
+
+        if password and not user.check_password(password):
+            user.set_password(password)
+            user.save(update_fields=["password"])
         return user
 
-    def _upsert_theme(self, *, name: str, config: dict) -> Theme:
+    def _upsert_theme(self, *, name: str, config: dict, is_default: bool = False) -> Theme:
         theme, _ = Theme.objects.update_or_create(
             name=name,
             defaults={
                 "config": config,
                 "is_active": True,
+                "is_default": is_default,
             },
         )
         return theme
@@ -132,6 +151,24 @@ class Command(BaseCommand):
         portfolio.skills.all().delete()
         portfolio.experiences.all().delete()
 
+    def _ensure_media_file(self, relative_path: str) -> None:
+        rel = str(relative_path or "").lstrip("/\\")
+        if not rel:
+            return
+
+        media_root = str(getattr(settings, "MEDIA_ROOT", "") or "")
+        if not media_root:
+            return
+
+        abs_path = os.path.join(media_root, rel)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+        if os.path.exists(abs_path):
+            return
+
+        with open(abs_path, "wb") as f:
+            f.write(self._PLACEHOLDER_PNG_BYTES)
+
     def _build_portfolio(self, *, portfolio: Portfolio, persona: str) -> None:
         """Create a full portfolio layout + typed data.
 
@@ -163,7 +200,7 @@ class Command(BaseCommand):
         skills_section = Section.objects.create(
             portfolio=portfolio,
             name="Skills",
-            order=3,
+            order=4,
             is_visible=True,
             config={},
         )
@@ -171,7 +208,15 @@ class Command(BaseCommand):
         experience_section = Section.objects.create(
             portfolio=portfolio,
             name="Experience",
-            order=4,
+            order=3,
+            is_visible=True,
+            config={},
+        )
+
+        education_section = Section.objects.create(
+            portfolio=portfolio,
+            name="Education",
+            order=5,
             is_visible=True,
             config={},
         )
@@ -257,6 +302,16 @@ class Command(BaseCommand):
             is_visible=True,
         )
 
+        Element.objects.create(
+            block=projects_grid_block,
+            label="Preview",
+            data_source=Element.DataSource.PROJECT,
+            field=Element.DataField.IMAGE,
+            config={},
+            order=4,
+            is_visible=True,
+        )
+
         projects_image_block = Block.objects.create(
             section=projects_section,
             type=Block.BlockType.IMAGE,
@@ -315,12 +370,12 @@ class Command(BaseCommand):
             is_visible=True,
         )
 
-        # Experience -> TIMELINE
+        # Experience -> TIMELINE (featured)
         experience_block = Block.objects.create(
             section=experience_section,
             type=Block.BlockType.TIMELINE,
             order=1,
-            config={},
+            config={"title": "Featured"},
             is_visible=True,
         )
 
@@ -360,6 +415,89 @@ class Command(BaseCommand):
                     {"key": "company", "operator": "eq", "value": primary_experience_company},
                 ]
             },
+            order=3,
+            is_visible=True,
+        )
+
+        # Experience -> TIMELINE (all work, excluding education)
+        experience_all_block = Block.objects.create(
+            section=experience_section,
+            type=Block.BlockType.TIMELINE,
+            order=2,
+            config={"title": "All Experience"},
+            is_visible=True,
+        )
+
+        exclude_education_filters = [
+            {"key": "company", "operator": "neq", "value": "State University"},
+            {"key": "company", "operator": "neq", "value": "Tech Institute"},
+        ]
+
+        Element.objects.create(
+            block=experience_all_block,
+            label="Company",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.COMPANY,
+            config={"filters": exclude_education_filters},
+            order=1,
+            is_visible=True,
+        )
+        Element.objects.create(
+            block=experience_all_block,
+            label="Role",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.ROLE,
+            config={"filters": exclude_education_filters},
+            order=2,
+            is_visible=True,
+        )
+        Element.objects.create(
+            block=experience_all_block,
+            label="Duration",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.TIMELINE,
+            config={"filters": exclude_education_filters},
+            order=3,
+            is_visible=True,
+        )
+
+        # Education -> TIMELINE (uses Experience model)
+        education_block = Block.objects.create(
+            section=education_section,
+            type=Block.BlockType.TIMELINE,
+            order=1,
+            config={},
+            is_visible=True,
+        )
+
+        education_filters = [
+            {"key": "company", "operator": "in", "value": ["State University", "Tech Institute"]},
+        ]
+
+        Element.objects.create(
+            block=education_block,
+            label="Institution",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.COMPANY,
+            config={"filters": education_filters},
+            order=1,
+            is_visible=True,
+        )
+        Element.objects.create(
+            block=education_block,
+            label="Degree",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.ROLE,
+            config={"filters": education_filters},
+            order=2,
+            is_visible=True,
+        )
+        Element.objects.create(
+            block=education_block,
+            label="Duration",
+            data_source=Element.DataSource.EXPERIENCE,
+            field=Element.DataField.TIMELINE,
+            config={"filters": education_filters},
             order=3,
             is_visible=True,
         )
@@ -421,6 +559,8 @@ class Command(BaseCommand):
             ]
 
         for index, data in enumerate(projects_data, start=1):
+            if data.get("image"):
+                self._ensure_media_file(str(data["image"]))
             Project.objects.create(
                 portfolio=portfolio,
                 title=data["title"],
@@ -463,12 +603,16 @@ class Command(BaseCommand):
     def _seed_experiences(self, *, portfolio: Portfolio, persona: str) -> None:
         if persona == "backend":
             experiences_data = [
+                {"company": "State University", "role": "B.Tech (Computer Science)", "timeline": "2018 - 2022"},
+                {"company": "Tech Institute", "role": "Diploma (Computer Applications)", "timeline": "2016 - 2018"},
                 {"company": "TechCorp", "role": "Backend Developer", "timeline": "2024 - Present"},
                 {"company": "StartupX", "role": "Software Engineer Intern", "timeline": "2023 - 2024"},
                 {"company": "Open Source", "role": "Contributor", "timeline": "2022 - 2023"},
             ]
         else:
             experiences_data = [
+                {"company": "State University", "role": "B.Des (Interaction Design)", "timeline": "2018 - 2022"},
+                {"company": "Tech Institute", "role": "Design Foundations", "timeline": "2016 - 2018"},
                 {"company": "PixelCraft Studio", "role": "UI Designer", "timeline": "2024 - Present"},
                 {"company": "Bright Agency", "role": "Junior UI/UX Designer", "timeline": "2023 - 2024"},
             ]

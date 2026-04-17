@@ -255,6 +255,107 @@ a { color: inherit; text-decoration: none; }
 .emptyTitle { font-weight: 700; }
 .emptySubtitle { margin-top: 6px; color: var(--muted); font-size: 13px; }
 
+/* -------------------------------
+   Theme picker (portfolio create)
+   ------------------------------- */
+
+.themePickGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .themePickGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .themePickGrid { grid-template-columns: 1fr; }
+}
+
+.themePickCard {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.themePickCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadowHover);
+}
+
+.themePickCardSelected {
+  border-color: rgba(79, 70, 229, 0.4);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.themePickPreview {
+  padding: 14px;
+  min-height: 122px;
+  display: grid;
+  gap: 6px;
+}
+
+.themePickTitle {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 14px;
+}
+
+.themePickSub {
+  opacity: 0.86;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.themePickMiniCard {
+  margin-top: 6px;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.themePickMiniRow {
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.22;
+}
+
+.themePickMiniRow + .themePickMiniRow { margin-top: 8px; }
+.themePickMiniRowShort { width: 70%; }
+
+.themePickMeta {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.themePickName {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.themePickSwatches {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.themePickSwatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
 .authShell {
   min-height: 100vh;
   display: grid;
@@ -520,7 +621,7 @@ a { color: inherit; text-decoration: none; }
   margin: -26px;
   padding: 32px 22px 80px;
   min-height: 100vh;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(229, 231, 235, 0.94);
   overflow: hidden;
 }
 
@@ -539,7 +640,8 @@ a { color: inherit; text-decoration: none; }
   justify-content: flex-end;
   gap: 10px;
   padding: 10px 0;
-  backdrop-filter: blur(10px);
+  background: rgba(15, 23, 42, 0.72);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .portfolioLoading {
@@ -571,16 +673,104 @@ a { color: inherit; text-decoration: none; }
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(900px 500px at 15% 20%, rgba(79, 70, 229, 0.35), transparent 55%),
-    radial-gradient(800px 520px at 85% 18%, rgba(139, 92, 246, 0.25), transparent 55%),
-    radial-gradient(900px 650px at 65% 85%, rgba(14, 165, 233, 0.18), transparent 60%),
-    linear-gradient(180deg, #070a16, #070a16);
+    radial-gradient(900px 520px at 20% 10%, rgba(99, 102, 241, 0.18), transparent 60%),
+    linear-gradient(180deg, #0f172a, #0b1220);
 }
 
-.portfolioContainer {
-  width: min(1100px, 100%);
+/* -------------------------------
+   Portfolio Site (clean layout)
+   ------------------------------- */
+
+.portfolioSiteShell {
+  --pf-bg: #0f172a;
+  --pf-text: rgba(229, 231, 235, 0.94);
+  --pf-muted: rgba(148, 163, 184, 0.92);
+  --pf-card: rgba(17, 24, 39, 0.80);
+  --pf-border: rgba(148, 163, 184, 0.16);
+  --pf-accent: #6366f1;
+}
+
+.portfolioSite {
+  position: relative;
+  z-index: 1;
+}
+
+.pfHero {
+  padding: 70px 0 10px;
+}
+
+.pfHeroInner {
+  max-width: 1100px;
   margin: 0 auto;
-  padding-top: 10px;
+  padding: 0 20px;
+}
+
+.pfHeroKicker {
+  font-weight: 600;
+  color: var(--pf-muted);
+  letter-spacing: 0.02em;
+}
+
+.pfHeroTitle {
+  margin: 12px 0 0;
+  font-size: clamp(42px, 6vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.pfHeroTagline {
+  margin-top: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.pfHeroDesc {
+  margin-top: 16px;
+  max-width: 78ch;
+  font-size: 16px;
+  line-height: 1.75;
+  color: rgba(203, 213, 225, 0.92);
+  white-space: pre-wrap;
+}
+
+.pfHeroActions {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.portfolioSiteShell .section {
+  max-width: 1100px;
+  margin: 80px auto;
+  padding: 0 20px;
+  scroll-margin-top: 80px;
+}
+
+.portfolioSiteShell .section-title {
+  margin: 0 0 30px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: rgba(226, 232, 240, 0.98);
+}
+
+.portfolioSiteShell .pfBlock {
+  display: grid;
+  gap: 16px;
+}
+
+.portfolioSiteShell .pfBlock + .pfBlock {
+  margin-top: 24px;
+}
+
+.portfolioSiteShell .pfBlockHeading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgba(226, 232, 240, 0.96);
 }
 
 .siteEmpty {
@@ -636,126 +826,189 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.28);
 }
 
-.hero {
-  padding: 34px 0 12px;
+/* GRID (Projects) */
+.portfolioSiteShell .pfGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
-.heroCard {
-  border-radius: 28px;
-  padding: 30px 26px;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.35);
+@media (max-width: 860px) {
+  .portfolioSiteShell .pfGrid { grid-template-columns: 1fr; }
 }
 
-.heroKicker {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.74);
+.portfolioSiteShell .card {
+  border-radius: 12px;
+  background: var(--pf-card);
+  border: 1px solid var(--pf-border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  transition: transform 220ms ease, box-shadow 220ms ease;
+  overflow: hidden;
 }
 
-.heroTitle {
-  margin: 10px 0 0;
-  font-size: clamp(40px, 6vw, 62px);
-  line-height: 1.02;
-  letter-spacing: -0.04em;
+.portfolioSiteShell .card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.30);
 }
 
-.heroTagline {
-  margin-top: 10px;
+.portfolioSiteShell .cardMedia {
+  height: 170px;
+  background: rgba(2, 6, 23, 0.65);
+}
+
+.portfolioSiteShell .cardImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.portfolioSiteShell .cardBody {
+  padding: 18px 18px 16px;
+}
+
+.portfolioSiteShell .cardTitle {
+  margin: 0;
   font-size: 18px;
   font-weight: 650;
-  color: rgba(255, 255, 255, 0.86);
+  letter-spacing: -0.01em;
 }
 
-.heroDescription {
-  margin-top: 14px;
-  max-width: 70ch;
-  font-size: 15px;
+.portfolioSiteShell .cardDesc {
+  margin-top: 10px;
+  color: rgba(203, 213, 225, 0.92);
   line-height: 1.7;
-  color: rgba(255, 255, 255, 0.78);
-  white-space: pre-wrap;
 }
 
-.heroActions {
-  margin-top: 18px;
+.portfolioSiteShell .cardActions {
+  margin-top: 14px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.portfolioSiteShell .link {
+  color: rgba(199, 210, 254, 0.95);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.portfolioSiteShell .link:hover {
+  text-decoration: underline;
+}
+
+/* LIST (Skills) */
+.portfolioSiteShell .pfTags {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
-.siteSection {
-  padding: 44px 0 0;
+.portfolioSiteShell .tag {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 13px;
 }
 
-.sectionHeader {
-  margin-bottom: 18px;
+/* TIMELINE (Experience) */
+.portfolioSiteShell .timeline {
+  border-left: 2px solid rgba(148, 163, 184, 0.22);
+  padding-left: 18px;
+  display: grid;
+  gap: 22px;
 }
 
-.sectionTitle {
-  margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.02em;
+.portfolioSiteShell .timelineItem {
+  position: relative;
 }
 
-.sectionSubtitle {
-  margin-top: 10px;
-  color: rgba(255, 255, 255, 0.72);
+.portfolioSiteShell .timelineDot {
+  position: absolute;
+  left: -26px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--pf-accent);
+}
+
+.portfolioSiteShell .timelineTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.portfolioSiteShell .timelineTitle {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.portfolioSiteShell .timelineOrg {
+  margin-top: 6px;
+  color: rgba(203, 213, 225, 0.92);
+}
+
+.portfolioSiteShell .timelinePeriod {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.portfolioSiteShell .timelineList {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: rgba(203, 213, 225, 0.92);
   line-height: 1.7;
-  max-width: 78ch;
 }
 
-.sectionBody {
+/* KEY_VALUE (About) */
+.portfolioSiteShell .pfKeyValues {
   display: grid;
   gap: 18px;
 }
 
-.siteBlock {
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(14px);
-  padding: 18px;
-  transition: transform 180ms ease, box-shadow 180ms ease;
-}
-
-.siteBlock:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
-}
-
-.blockHeader {
-  margin-bottom: 12px;
-}
-
-.blockTitle {
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.blockSubtitle {
-  margin-top: 6px;
-  color: rgba(255, 255, 255, 0.72);
-  line-height: 1.7;
-}
-
-.projectsGrid {
+.portfolioSiteShell .pfKeyValueRow {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.portfolioSiteShell .pfKey {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.92);
+  margin: 0;
+}
+
+.portfolioSiteShell .pfValue {
+  margin: 0;
+  line-height: 1.75;
+  color: rgba(226, 232, 240, 0.92);
+  white-space: pre-wrap;
+}
+
+/* IMAGE */
+.portfolioSiteShell .pfImages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
 @media (max-width: 860px) {
-  .projectsGrid { grid-template-columns: 1fr; }
+  .portfolioSiteShell .pfImages { grid-template-columns: 1fr; }
 }
 
-.projectCard {
-  border-radius: 22px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  transition: transform 200ms ease, box-shadow 200ms ease;
+.portfolioSiteShell .pfImage {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--pf-border);
 }
 
 .projectCard:hover {

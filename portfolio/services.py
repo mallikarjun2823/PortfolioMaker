@@ -60,7 +60,7 @@ def _serialize_value(value: Any) -> Any:
     return str(value)
 
 
-def _get_queryset(portfolio: Portfolio, data_source: str) -> QuerySet:
+def _get_queryset(portfolio: Portfolio, data_source: str, *, include_unpublished: bool = False) -> QuerySet:
     if data_source == Element.DataSource.PROJECT:
         return Project.objects.filter(portfolio=portfolio, is_visible=True)
 
@@ -71,7 +71,10 @@ def _get_queryset(portfolio: Portfolio, data_source: str) -> QuerySet:
         return Experience.objects.filter(portfolio=portfolio, is_visible=True)
 
     if data_source == Element.DataSource.PORTFOLIO:
-        return Portfolio.objects.filter(id=portfolio.id, is_published=True)
+        qs = Portfolio.objects.filter(id=portfolio.id)
+        if not include_unpublished:
+            qs = qs.filter(is_published=True)
+        return qs
 
     return Portfolio.objects.none()
 
@@ -135,7 +138,12 @@ def _filters_cache_key(filters: Sequence[Dict[str, Any]]) -> tuple:
     return tuple(normalized)
 
 
-def _resolve_block_items(portfolio: Portfolio, elements: Iterable[Element]) -> List[Dict[str, Any]]:
+def _resolve_block_items(
+    portfolio: Portfolio,
+    elements: Iterable[Element],
+    *,
+    include_unpublished: bool = False,
+) -> List[Dict[str, Any]]:
     element_data: List[tuple[Element, List[Any]]] = []
     max_rows = 0
 
@@ -148,7 +156,7 @@ def _resolve_block_items(portfolio: Portfolio, elements: Iterable[Element]) -> L
 
         records = record_cache.get(cache_key)
         if records is None:
-            queryset = _get_queryset(portfolio, element.data_source)
+            queryset = _get_queryset(portfolio, element.data_source, include_unpublished=include_unpublished)
             queryset = _apply_filters(queryset, filters)
             records = list(queryset)
             record_cache[cache_key] = records
@@ -171,7 +179,7 @@ def _resolve_block_items(portfolio: Portfolio, elements: Iterable[Element]) -> L
     return rows
 
 
-def _fetch_blocks(section: Section) -> List[Dict[str, Any]]:
+def _fetch_blocks(section: Section, *, include_unpublished: bool = False) -> List[Dict[str, Any]]:
     visible_elements = Prefetch(
         "elements",
         queryset=Element.objects.filter(is_visible=True).order_by("order", "id"),
@@ -187,7 +195,7 @@ def _fetch_blocks(section: Section) -> List[Dict[str, Any]]:
     rendered_blocks: List[Dict[str, Any]] = []
     for block in blocks:
         elements = list(getattr(block, "_visible_elements", []))
-        items = _resolve_block_items(section.portfolio, elements)
+        items = _resolve_block_items(section.portfolio, elements, include_unpublished=include_unpublished)
 
         rendered_blocks.append(
             {
@@ -200,14 +208,14 @@ def _fetch_blocks(section: Section) -> List[Dict[str, Any]]:
     return rendered_blocks
 
 
-def _fetch_sections(portfolio: Portfolio) -> List[Dict[str, Any]]:
+def _fetch_sections(portfolio: Portfolio, *, include_unpublished: bool = False) -> List[Dict[str, Any]]:
     sections = Section.objects.filter(portfolio=portfolio, is_visible=True).order_by("order", "id")
 
     return [
         {
             "name": section.name,
             "config": _safe_config(section.config),
-            "blocks": _fetch_blocks(section),
+            "blocks": _fetch_blocks(section, include_unpublished=include_unpublished),
         }
         for section in sections
     ]
@@ -242,7 +250,7 @@ class PortfolioRenderService:
                 "slug": portfolio.slug,
                 "description": portfolio.description,
                 "theme": theme_data,
-                "sections": _fetch_sections(portfolio),
+                "sections": _fetch_sections(portfolio, include_unpublished=include_unpublished),
             }
         }
 
