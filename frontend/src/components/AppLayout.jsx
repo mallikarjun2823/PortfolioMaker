@@ -66,6 +66,12 @@ export default function AppLayout() {
             Overview
           </NavLink>
           <NavLink
+            to={activePortfolioId ? `/app/portfolios/${activePortfolioId}/build` : '/app/portfolios'}
+            className={({ isActive }) => clsx('navItem', isActive && 'active')}
+          >
+            Build
+          </NavLink>
+          <NavLink
             to={activePortfolioId ? `/app/portfolios/${activePortfolioId}/projects` : '/app/portfolios'}
             className={({ isActive }) => clsx('navItem', isActive && 'active')}
           >
@@ -82,12 +88,6 @@ export default function AppLayout() {
             className={({ isActive }) => clsx('navItem', isActive && 'active')}
           >
             Experiences
-          </NavLink>
-          <NavLink
-            to={activePortfolioId ? `/app/portfolios/${activePortfolioId}/sections` : '/app/portfolios'}
-            className={({ isActive }) => clsx('navItem', isActive && 'active')}
-          >
-            Sections
           </NavLink>
         </nav>
 

@@ -77,6 +77,9 @@ export const api = {
     apiRequest(`/portfolios/${id}/`, { method, token, body: payload }),
   deletePortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { method: 'DELETE', token }),
 
+  // render
+  renderPortfolio: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token }),
+
   // children
   listProjects: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/projects/`, { token }),
   createProject: (token, portfolioId, payload) => apiRequest(`/portfolios/${portfolioId}/projects/`, { method: 'POST', token, body: payload }),
@@ -100,5 +103,24 @@ export const api = {
   createSection: (token, portfolioId, payload) => apiRequest(`/portfolios/${portfolioId}/sections/`, { method: 'POST', token, body: payload }),
   updateSection: (token, portfolioId, sectionId, payload, { method = 'PATCH' } = {}) =>
     apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/`, { method, token, body: payload }),
-  deleteSection: (token, portfolioId, sectionId) => apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/`, { method: 'DELETE', token })
+  deleteSection: (token, portfolioId, sectionId) => apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/`, { method: 'DELETE', token }),
+
+  // blocks (under sections)
+  listBlocks: (token, portfolioId, sectionId) => apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/`, { token }),
+  createBlock: (token, portfolioId, sectionId, payload) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/`, { method: 'POST', token, body: payload }),
+  updateBlock: (token, portfolioId, sectionId, blockId, payload, { method = 'PATCH' } = {}) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/`, { method, token, body: payload }),
+  deleteBlock: (token, portfolioId, sectionId, blockId) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/`, { method: 'DELETE', token }),
+
+  // elements (under blocks)
+  listElements: (token, portfolioId, sectionId, blockId) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/`, { token }),
+  createElement: (token, portfolioId, sectionId, blockId, payload) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/`, { method: 'POST', token, body: payload }),
+  updateElement: (token, portfolioId, sectionId, blockId, elementId, payload, { method = 'PATCH' } = {}) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/${elementId}/`, { method, token, body: payload }),
+  deleteElement: (token, portfolioId, sectionId, blockId, elementId) =>
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/${elementId}/`, { method: 'DELETE', token })
 }

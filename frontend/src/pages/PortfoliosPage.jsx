@@ -204,7 +204,7 @@ export default function PortfoliosPage() {
 
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <Link className="smallLink" to={`/app/portfolios/${p.id}/projects`}>Manage Projects</Link>
-                  <Link className="smallLink" to={`/app/portfolios/${p.id}/sections`}>Manage Sections</Link>
+                  <Link className="smallLink" to={`/app/portfolios/${p.id}/build`}>Build</Link>
                 </div>
               </Card>
             )

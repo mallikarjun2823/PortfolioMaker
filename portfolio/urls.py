@@ -8,6 +8,11 @@ urlpatterns = [
     path("portfolios/", views.PortfolioAPIView.as_view(), name="portfolio-list"),
     path("portfolios/<int:pk>/", views.PortfolioDetailAPIView.as_view(), name="portfolio-detail"),
     path(
+        "portfolios/<int:portfolio_id>/render/",
+        views.PortfolioRenderAPIView.as_view(),
+        name="portfolio-render",
+    ),
+    path(
         "portfolios/<int:portfolio_id>/projects/",
         views.ProjectListCreateAPIView.as_view(),
         name="project-list-create",
@@ -46,5 +51,25 @@ urlpatterns = [
         "portfolios/<int:portfolio_id>/sections/<int:section_id>/",
         views.SectionDetailAPIView.as_view(),
         name="section-detail",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/<int:section_id>/blocks/",
+        views.BlockListCreateAPIView.as_view(),
+        name="block-list-create",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/<int:section_id>/blocks/<int:block_id>/",
+        views.BlockDetailAPIView.as_view(),
+        name="block-detail",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/<int:section_id>/blocks/<int:block_id>/elements/",
+        views.ElementListCreateAPIView.as_view(),
+        name="element-list-create",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/sections/<int:section_id>/blocks/<int:block_id>/elements/<int:element_id>/",
+        views.ElementDetailAPIView.as_view(),
+        name="element-detail",
     ),
 ]

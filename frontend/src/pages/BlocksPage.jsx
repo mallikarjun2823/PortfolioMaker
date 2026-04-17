@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
 import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, PageHeader, Pill, Textarea } from '../components/Ui.jsx'
+import ElementList from '../components/elements/ElementList.jsx'
+import ElementModal from '../components/elements/ElementModal.jsx'
 import Value from '../components/render/Value.jsx'
 
 function safeJsonParseObject(text) {
@@ -30,7 +32,7 @@ function KeyValueTable({ rows, emptyText = 'No values.' }) {
         <thead>
           <tr>
             <th style={{ width: 70 }}>S.No</th>
-            <th>Config name</th>
+            <th>Name</th>
             <th>Value</th>
           </tr>
         </thead>
@@ -50,28 +52,44 @@ function KeyValueTable({ rows, emptyText = 'No values.' }) {
   )
 }
 
-export default function SectionsPage() {
-  const { token } = useAuth()
-  const { portfolioId } = useParams()
+const BLOCK_TYPES = [
+  { value: 'LIST', label: 'List' },
+  { value: 'GRID', label: 'Grid' },
+  { value: 'TIMELINE', label: 'Timeline' },
+  { value: 'KEY_VALUE', label: 'Key / Value' },
+  { value: 'IMAGE', label: 'Image' }
+]
 
-  const [sections, setSections] = useState([])
+export default function BlocksPage() {
+  const { token } = useAuth()
+  const { portfolioId, sectionId } = useParams()
+
+  const [blocks, setBlocks] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   // create
   const [creating, setCreating] = useState(false)
-  const [createName, setCreateName] = useState('')
+  const [createType, setCreateType] = useState('LIST')
   const [createOrder, setCreateOrder] = useState('')
 
   // edit selected
-  const [draft, setDraft] = useState({ name: '', order: '', is_visible: true, configText: '{}' })
+  const [draft, setDraft] = useState({ type: 'LIST', order: '', is_visible: true, configText: '{}' })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [moving, setMoving] = useState(false)
   const [togglingVisible, setTogglingVisible] = useState(false)
 
-  const selected = useMemo(() => sections.find((s) => s.id === selectedId) || null, [sections, selectedId])
+  // elements
+  const [elements, setElements] = useState([])
+  const [elementsLoading, setElementsLoading] = useState(false)
+  const [elementsError, setElementsError] = useState(null)
+  const [elementModalOpen, setElementModalOpen] = useState(false)
+  const [elementModalMode, setElementModalMode] = useState('add')
+  const [elementEditing, setElementEditing] = useState(null)
+
+  const selected = useMemo(() => blocks.find((b) => b.id === selectedId) || null, [blocks, selectedId])
 
   const jsonState = useMemo(() => {
     try {
@@ -81,32 +99,19 @@ export default function SectionsPage() {
     }
   }, [draft.configText])
 
-  const configRows = useMemo(() => {
-    if (!jsonState.ok) return []
-    const cfg = jsonState.value || {}
-    const { lookup, ...rest } = cfg
-    return toKeyValueRows(rest)
-  }, [jsonState])
-
-  const lookupRows = useMemo(() => {
-    if (!jsonState.ok) return []
-    const cfg = jsonState.value || {}
-    const lookup = cfg.lookup
-    if (!lookup || typeof lookup !== 'object' || Array.isArray(lookup)) return []
-    return toKeyValueRows(lookup)
-  }, [jsonState])
+  const configRows = useMemo(() => (jsonState.ok ? toKeyValueRows(jsonState.value || {}) : []), [jsonState])
 
   async function load() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listSections(token, portfolioId)
+      const res = await api.listBlocks(token, portfolioId, sectionId)
       const list = Array.isArray(res) ? res : []
-      setSections(list)
+      setBlocks(list)
 
       if (list.length === 0) {
         setSelectedId(null)
-      } else if (!list.some((s) => s.id === selectedId)) {
+      } else if (!list.some((b) => b.id === selectedId)) {
         setSelectedId(list[0].id)
       }
     } catch (err) {
@@ -117,29 +122,121 @@ export default function SectionsPage() {
   }
 
   useEffect(() => {
+    if (!token) return
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portfolioId])
+  }, [token, portfolioId, sectionId])
 
   useEffect(() => {
     if (!selected) return
     setDraft({
-      name: selected.name || '',
+      type: selected.type || 'LIST',
       order: selected.order ?? '',
       is_visible: !!selected.is_visible,
       configText: JSON.stringify(selected.config || {}, null, 2)
     })
   }, [selectedId])
 
+  async function loadElements(blockId) {
+    if (!blockId) {
+      setElements([])
+      return
+    }
+
+    setElementsLoading(true)
+    setElementsError(null)
+    try {
+      const res = await api.listElements(token, portfolioId, sectionId, blockId)
+      setElements(Array.isArray(res) ? res : [])
+    } catch (err) {
+      setElementsError(err)
+      setElements([])
+    } finally {
+      setElementsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!token) return
+    if (!selected?.id) {
+      setElements([])
+      setElementsError(null)
+      return
+    }
+    loadElements(selected.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, portfolioId, sectionId, selectedId])
+
+  function openAddElement() {
+    setElementModalMode('add')
+    setElementEditing(null)
+    setElementModalOpen(true)
+  }
+
+  function openEditElement(el) {
+    setElementModalMode('edit')
+    setElementEditing(el)
+    setElementModalOpen(true)
+  }
+
+  async function submitElement(payload) {
+    if (!selected?.id) return
+    setElementsError(null)
+    if (elementModalMode === 'edit' && elementEditing?.id) {
+      await api.updateElement(token, portfolioId, sectionId, selected.id, elementEditing.id, payload)
+      await loadElements(selected.id)
+      return
+    }
+    await api.createElement(token, portfolioId, sectionId, selected.id, payload)
+    await loadElements(selected.id)
+  }
+
+  async function deleteElement(el) {
+    if (!selected?.id || !el?.id) return
+    const ok = confirm('Delete this element?')
+    if (!ok) return
+    setElementsError(null)
+    try {
+      await api.deleteElement(token, portfolioId, sectionId, selected.id, el.id)
+      await loadElements(selected.id)
+    } catch (err) {
+      setElementsError(err)
+    }
+  }
+
+  async function toggleElementVisible(el) {
+    if (!selected?.id || !el?.id) return
+    setElementsError(null)
+    try {
+      await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { is_visible: !el.is_visible })
+      await loadElements(selected.id)
+    } catch (err) {
+      setElementsError(err)
+    }
+  }
+
+  async function moveElement(el, direction) {
+    if (!selected?.id || !el?.id) return
+    const nextOrder = Number(el.order) + Number(direction)
+    if (!Number.isFinite(nextOrder)) return
+
+    setElementsError(null)
+    try {
+      await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { order: nextOrder })
+      await loadElements(selected.id)
+    } catch (err) {
+      setElementsError(err)
+    }
+  }
+
   async function onCreate(e) {
     e.preventDefault()
     setCreating(true)
     setError(null)
     try {
-      const payload = { name: createName }
+      const payload = { type: createType }
       if (createOrder !== '') payload.order = Number(createOrder)
-      const created = await api.createSection(token, portfolioId, payload)
-      setCreateName('')
+      const created = await api.createBlock(token, portfolioId, sectionId, payload)
       setCreateOrder('')
       await load()
       if (created?.id) setSelectedId(created.id)
@@ -156,13 +253,13 @@ export default function SectionsPage() {
     setError(null)
     try {
       const payload = {
-        name: draft.name,
+        type: draft.type,
         is_visible: !!draft.is_visible,
         config: safeJsonParseObject(draft.configText)
       }
       if (draft.order !== '') payload.order = Number(draft.order)
 
-      await api.updateSection(token, portfolioId, selected.id, payload)
+      await api.updateBlock(token, portfolioId, sectionId, selected.id, payload)
       await load()
     } catch (err) {
       setError(err)
@@ -173,13 +270,13 @@ export default function SectionsPage() {
 
   async function onDelete() {
     if (!selected) return
-    const ok = confirm('Delete this section?')
+    const ok = confirm('Delete this block?')
     if (!ok) return
 
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteSection(token, portfolioId, selected.id)
+      await api.deleteBlock(token, portfolioId, sectionId, selected.id)
       await load()
     } catch (err) {
       setError(err)
@@ -191,12 +288,12 @@ export default function SectionsPage() {
   async function move(direction) {
     if (!selected) return
     const nextOrder = Number(selected.order) + direction
-    if (nextOrder < 1 || nextOrder > sections.length) return
+    if (nextOrder < 1 || nextOrder > blocks.length) return
 
     setMoving(true)
     setError(null)
     try {
-      await api.updateSection(token, portfolioId, selected.id, { order: nextOrder })
+      await api.updateBlock(token, portfolioId, sectionId, selected.id, { order: nextOrder })
       await load()
     } catch (err) {
       setError(err)
@@ -210,7 +307,7 @@ export default function SectionsPage() {
     setTogglingVisible(true)
     setError(null)
     try {
-      await api.updateSection(token, portfolioId, selected.id, { is_visible: !selected.is_visible })
+      await api.updateBlock(token, portfolioId, sectionId, selected.id, { is_visible: !selected.is_visible })
       await load()
     } catch (err) {
       setError(err)
@@ -222,11 +319,11 @@ export default function SectionsPage() {
   return (
     <div>
       <PageHeader
-        title="Sections"
-        subtitle="Pick a section on the left, configure it on the right."
+        title="Blocks"
+        subtitle="Pick a block on the left, configure it on the right."
         right={
           <div className="row">
-            <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/build`}>Back</Link>
+            <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/sections`}>Back to Sections</Link>
             <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
           </div>
         }
@@ -243,19 +340,29 @@ export default function SectionsPage() {
         }}
       >
         <Card>
-          <CardTitle>Sections</CardTitle>
-          <div className="subtle">Create and select a section to configure.</div>
+          <CardTitle>Blocks</CardTitle>
+          <div className="subtle">Create and select a block to configure.</div>
           <div className="divider" />
 
           <form onSubmit={onCreate}>
-            <Field label="New section name">
-              <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="sec1" />
+            <Field label="Type">
+              <select
+                className="input"
+                value={createType}
+                onChange={(e) => setCreateType(e.target.value)}
+              >
+                {BLOCK_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
             </Field>
-            <Field label="Order" hint={`Optional (1..${sections.length + 1})`}>
+            <Field label="Order" hint={`Optional (1..${blocks.length + 1})`}>
               <Input value={createOrder} onChange={(e) => setCreateOrder(e.target.value)} placeholder="1" />
             </Field>
             <div className="row" style={{ justifyContent: 'flex-end' }}>
-              <Button type="submit" disabled={creating || !createName.trim()}>{creating ? 'Creating…' : 'Create'}</Button>
+              <Button type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create'}</Button>
             </div>
           </form>
 
@@ -263,17 +370,17 @@ export default function SectionsPage() {
 
           {loading ? (
             <div className="subtle">Loading…</div>
-          ) : sections.length === 0 ? (
-            <EmptyState title="No sections" subtitle="Create the first one above." />
+          ) : blocks.length === 0 ? (
+            <EmptyState title="No blocks" subtitle="Create the first one above." />
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
-              {sections.map((s) => {
-                const active = s.id === selectedId
+              {blocks.map((b) => {
+                const active = b.id === selectedId
                 return (
                   <button
-                    key={s.id}
+                    key={b.id}
                     type="button"
-                    onClick={() => setSelectedId(s.id)}
+                    onClick={() => setSelectedId(b.id)}
                     className="btn btnGhost"
                     style={{
                       textAlign: 'left',
@@ -288,11 +395,11 @@ export default function SectionsPage() {
                   >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        #{s.order} • {s.name}
+                        #{b.order} • {b.type}
                       </div>
-                      <div className="subtle" style={{ marginTop: 4 }}>{s.is_visible ? 'Visible' : 'Hidden'}</div>
+                      <div className="subtle" style={{ marginTop: 4 }}>{b.is_visible ? 'Visible' : 'Hidden'}</div>
                     </div>
-                    {!s.is_visible ? <Pill>Hidden</Pill> : null}
+                    {!b.is_visible ? <Pill>Hidden</Pill> : null}
                   </button>
                 )
               })}
@@ -303,20 +410,20 @@ export default function SectionsPage() {
         <div style={{ display: 'grid', gap: 14 }}>
           {!selected ? (
             <Card>
-              <CardTitle>Configure section</CardTitle>
-              <EmptyState title="Select a section" subtitle="Choose a section from the left rail." />
+              <CardTitle>Configure block</CardTitle>
+              <EmptyState title="Select a block" subtitle="Choose a block from the left rail." />
             </Card>
           ) : (
             <>
               <Card>
                 <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <CardTitle>Config the section</CardTitle>
+                    <CardTitle>Config the block</CardTitle>
                     <div className="subtle">Edit basics and config JSON (modal UI can be added later).</div>
                   </div>
                   <div className="row">
                     <Button variant="ghost" onClick={() => move(-1)} disabled={moving || selected.order <= 1}>↑</Button>
-                    <Button variant="ghost" onClick={() => move(+1)} disabled={moving || selected.order >= sections.length}>↓</Button>
+                    <Button variant="ghost" onClick={() => move(+1)} disabled={moving || selected.order >= blocks.length}>↓</Button>
                     <Button variant="ghost" onClick={toggleVisible} disabled={togglingVisible}>
                       {selected.is_visible ? 'Hide' : 'Show'}
                     </Button>
@@ -327,10 +434,20 @@ export default function SectionsPage() {
                 <div className="divider" />
 
                 <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-                  <Field label="Name">
-                    <Input value={draft.name} onChange={(e) => setDraft((x) => ({ ...x, name: e.target.value }))} />
+                  <Field label="Type">
+                    <select
+                      className="input"
+                      value={draft.type}
+                      onChange={(e) => setDraft((x) => ({ ...x, type: e.target.value }))}
+                    >
+                      {BLOCK_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
-                  <Field label={`Order (1..${Math.max(1, sections.length)})`}>
+                  <Field label={`Order (1..${Math.max(1, blocks.length)})`}>
                     <Input value={draft.order} onChange={(e) => setDraft((x) => ({ ...x, order: e.target.value }))} />
                   </Field>
                   <Field label="Visibility">
@@ -346,31 +463,43 @@ export default function SectionsPage() {
                   {!jsonState.ok ? <div className="fieldHint">{jsonState.message}</div> : null}
                 </Field>
 
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/sections/${selected.id}/blocks`}>
-                    Add blocks
-                  </Link>
-                  <Button onClick={onSave} disabled={saving || !draft.name.trim() || !jsonState.ok}>
+                <div className="row" style={{ justifyContent: 'flex-end' }}>
+                  <Button onClick={onSave} disabled={saving || !jsonState.ok}>
                     {saving ? 'Saving…' : 'Save'}
                   </Button>
                 </div>
+
+                <div className="divider" />
+
+                <ErrorBanner error={elementsError} />
+
+                <ElementList
+                  elements={elements}
+                  loading={elementsLoading}
+                  onAdd={openAddElement}
+                  onToggleVisible={toggleElementVisible}
+                  onEdit={openEditElement}
+                  onDelete={deleteElement}
+                  onMove={moveElement}
+                />
               </Card>
 
               <Card>
                 <CardTitle>Config values</CardTitle>
                 <KeyValueTable rows={configRows} emptyText="No config values." />
               </Card>
-
-              <Card>
-                <CardTitle>Lookup CSS values</CardTitle>
-                <div className="subtle">If you add a top-level `lookup` object in config, it shows up here.</div>
-                <div className="divider" />
-                <KeyValueTable rows={lookupRows} emptyText="No lookup values." />
-              </Card>
             </>
           )}
         </div>
       </div>
+
+      <ElementModal
+        open={elementModalOpen}
+        mode={elementModalMode}
+        initial={elementEditing}
+        onClose={() => setElementModalOpen(false)}
+        onSubmit={submitElement}
+      />
     </div>
   )
 }

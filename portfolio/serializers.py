@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Experience, Portfolio, Project, Section, Skill
+from .models import Block, Element, Experience, Portfolio, Project, Section, Skill
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -389,6 +389,259 @@ class SectionPatchSerializer(_BaseSectionWriteSerializer):
         ]
         extra_kwargs = {
             "name": {"required": False},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
+        }
+
+
+class BlockResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Block
+        fields = [
+            "id",
+            "section",
+            "type",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        read_only_fields = fields
+
+
+class _BaseBlockWriteSerializer(serializers.ModelSerializer):
+    def validate_type(self, value: str) -> str:
+        t = "" if value is None else str(value)
+        t = t.strip().upper()
+        if not t:
+            raise serializers.ValidationError("Type cannot be empty.")
+
+        allowed = {c for c, _ in Block.BlockType.choices}
+        if t not in allowed:
+            raise serializers.ValidationError("Invalid block type.")
+        return t
+
+    def validate_order(self, value: int) -> int:
+        if value is None:
+            return value
+
+        try:
+            order = int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("Order must be an integer.")
+
+        if order < 1:
+            raise serializers.ValidationError("Order must be >= 1.")
+        return order
+
+    def validate_config(self, value):
+        if value is None:
+            raise serializers.ValidationError("Config must be an object.")
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Config must be an object.")
+        return value
+
+
+class BlockCreateSerializer(_BaseBlockWriteSerializer):
+    class Meta:
+        model = Block
+        fields = [
+            "type",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
+        }
+
+
+class BlockPutSerializer(_BaseBlockWriteSerializer):
+    class Meta:
+        model = Block
+        fields = [
+            "type",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "type": {"required": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+            "config": {"required": True},
+        }
+
+
+class BlockPatchSerializer(_BaseBlockWriteSerializer):
+    class Meta:
+        model = Block
+        fields = [
+            "type",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "type": {"required": False},
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
+        }
+
+
+_ALLOWED_ELEMENT_FIELDS_BY_SOURCE = {
+    "PROJECT": {"title", "description", "github_url", "image"},
+    "SKILL": {"name", "level"},
+    "EXPERIENCE": {"company", "role", "timeline"},
+    "PORTFOLIO": {"title", "description"},
+}
+
+
+class ElementResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Element
+        fields = [
+            "id",
+            "block",
+            "label",
+            "data_source",
+            "field",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        read_only_fields = fields
+
+
+class _BaseElementWriteSerializer(serializers.ModelSerializer):
+    def validate_label(self, value: str) -> str:
+        label = "" if value is None else str(value)
+        label = label.strip()
+        if not label:
+            raise serializers.ValidationError("Label cannot be empty.")
+        return label
+
+    def validate_data_source(self, value: str) -> str:
+        ds = "" if value is None else str(value)
+        ds = ds.strip().upper()
+        if not ds:
+            raise serializers.ValidationError("Data source cannot be empty.")
+
+        allowed = {c for c, _ in Element.DataSource.choices}
+        if ds not in allowed:
+            raise serializers.ValidationError("Invalid data source.")
+        return ds
+
+    def validate_field(self, value: str) -> str:
+        f = "" if value is None else str(value)
+        f = f.strip()
+        if not f:
+            raise serializers.ValidationError("Field cannot be empty.")
+
+        allowed = {c for c, _ in Element.DataField.choices}
+        if f not in allowed:
+            raise serializers.ValidationError("Invalid field.")
+        return f
+
+    def validate_order(self, value: int) -> int:
+        if value is None:
+            return value
+
+        try:
+            order = int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("Order must be an integer.")
+
+        if order < 1:
+            raise serializers.ValidationError("Order must be >= 1.")
+        return order
+
+    def validate_config(self, value):
+        if value is None:
+            raise serializers.ValidationError("Config must be an object.")
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Config must be an object.")
+        return value
+
+    def validate(self, attrs):
+        data = dict(attrs)
+
+        ds = data.get("data_source")
+        f = data.get("field")
+
+        # Support PATCH where only one of the fields is present.
+        if ds is None and getattr(self.instance, "data_source", None) is not None:
+            ds = self.instance.data_source
+        if f is None and getattr(self.instance, "field", None) is not None:
+            f = self.instance.field
+
+        if ds and f:
+            allowed = _ALLOWED_ELEMENT_FIELDS_BY_SOURCE.get(str(ds).upper())
+            if allowed is not None and str(f) not in allowed:
+                raise serializers.ValidationError(
+                    {"field": "Invalid field for the selected data source."}
+                )
+
+        return attrs
+
+
+class ElementCreateSerializer(_BaseElementWriteSerializer):
+    class Meta:
+        model = Element
+        fields = [
+            "label",
+            "data_source",
+            "field",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "order": {"required": False},
+            "is_visible": {"required": False},
+            "config": {"required": False},
+        }
+
+
+class ElementPutSerializer(_BaseElementWriteSerializer):
+    class Meta:
+        model = Element
+        fields = [
+            "label",
+            "data_source",
+            "field",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "label": {"required": True},
+            "data_source": {"required": True},
+            "field": {"required": True},
+            "order": {"required": True},
+            "is_visible": {"required": True},
+            "config": {"required": True},
+        }
+
+
+class ElementPatchSerializer(_BaseElementWriteSerializer):
+    class Meta:
+        model = Element
+        fields = [
+            "label",
+            "data_source",
+            "field",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        extra_kwargs = {
+            "label": {"required": False},
+            "data_source": {"required": False},
+            "field": {"required": False},
             "order": {"required": False},
             "is_visible": {"required": False},
             "config": {"required": False},

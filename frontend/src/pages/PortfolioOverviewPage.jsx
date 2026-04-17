@@ -56,7 +56,7 @@ export default function PortfolioOverviewPage() {
         subtitle={portfolio ? (portfolio.description || 'No description') : 'Overview'}
         right={
           <div className="row">
-            <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/sections`}>Edit Sections</Link>
+            <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/build`}>Build</Link>
             <Link className="btn" to={`/app/portfolios/${portfolioId}/projects`}>Edit Data</Link>
           </div>
         }

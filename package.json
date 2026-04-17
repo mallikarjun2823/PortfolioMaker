@@ -1,0 +1,11 @@
+{
+  "name": "portfolio-maker",
+  "private": true,
+  "scripts": {
+    "frontend:install": "npm --prefix frontend install",
+    "frontend:clean": "node -e \"require('fs').rmSync('frontend/node_modules/.vite', { recursive: true, force: true })\"",
+    "dev": "npm --prefix frontend run dev --",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview"
+  }
+}

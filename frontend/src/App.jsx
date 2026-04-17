@@ -12,7 +12,10 @@ import ProjectsPage from './pages/ProjectsPage.jsx'
 import SkillsPage from './pages/SkillsPage.jsx'
 import ExperiencesPage from './pages/ExperiencesPage.jsx'
 import SectionsPage from './pages/SectionsPage.jsx'
+import BlocksPage from './pages/BlocksPage.jsx'
 import PortfolioOverviewPage from './pages/PortfolioOverviewPage.jsx'
+import BuildPortfolioPage from './pages/BuildPortfolioPage.jsx'
+import PortfolioRenderPage from './pages/PortfolioRenderPage.jsx'
 
 function Protected({ children }) {
   const { token, loading } = useAuth()
@@ -44,10 +47,13 @@ export default function App() {
         <Route path="portfolios" element={<PortfoliosPage />} />
 
         <Route path="portfolios/:portfolioId" element={<PortfolioOverviewPage />} />
+        <Route path="portfolios/:portfolioId/build" element={<BuildPortfolioPage />} />
+        <Route path="portfolios/:portfolioId/preview" element={<PortfolioRenderPage />} />
         <Route path="portfolios/:portfolioId/projects" element={<ProjectsPage />} />
         <Route path="portfolios/:portfolioId/skills" element={<SkillsPage />} />
         <Route path="portfolios/:portfolioId/experiences" element={<ExperiencesPage />} />
         <Route path="portfolios/:portfolioId/sections" element={<SectionsPage />} />
+        <Route path="portfolios/:portfolioId/sections/:sectionId/blocks" element={<BlocksPage />} />
 
         <Route path="*" element={<Navigate to="/app/portfolios" replace />} />
       </Route>

@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
 import App from './App.jsx'
-import { AuthProvider } from './services/auth.jsx'
+import { AuthProvider } from './services/AuthProvider.jsx'
 
 import './styles/global.css'
 

@@ -7,6 +7,14 @@ from rest_framework.views import APIView
 
 from .serializers import (
     AuthResponseSerializer,
+    BlockCreateSerializer,
+    BlockPatchSerializer,
+    BlockPutSerializer,
+    BlockResponseSerializer,
+    ElementCreateSerializer,
+    ElementPatchSerializer,
+    ElementPutSerializer,
+    ElementResponseSerializer,
     ExperienceCreateSerializer,
     ExperiencePatchSerializer,
     ExperiencePutSerializer,
@@ -30,7 +38,30 @@ from .serializers import (
     SkillPutSerializer,
     SkillResponseSerializer,
 )
-from .services import AuthService, ExperienceService, PortfolioService, ProjectService, SectionService, SkillService
+from .services import (
+    AuthService,
+    BlockService,
+    ElementService,
+    ExperienceService,
+    PortfolioRenderService,
+    PortfolioService,
+    ProjectService,
+    SectionService,
+    SkillService,
+)
+
+
+class PortfolioRenderAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = PortfolioRenderService()
+
+    def get(self, request, portfolio_id: int):
+        payload = self.service.render_portfolio(
+            portfolio_id=portfolio_id,
+            user_id=request.user.id,
+            include_unpublished=True,
+        )
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class RegisterAPIView(APIView):
@@ -366,4 +397,135 @@ class SectionDetailAPIView(APIView):
     def delete(self, request, portfolio_id: int, section_id: int):
         section = self._get_object(request, portfolio_id, section_id)
         self.service.delete(instance=section, user=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BlockListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = BlockService()
+
+    def get(self, request, portfolio_id: int, section_id: int):
+        blocks = self.service.list(portfolio_id=portfolio_id, section_id=section_id, user=request.user)
+        serializer = BlockResponseSerializer(blocks, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, portfolio_id: int, section_id: int):
+        serializer = BlockCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        block = self.service.create(
+            portfolio_id=portfolio_id,
+            section_id=section_id,
+            user=request.user,
+            validated_data=serializer.validated_data,
+        )
+        response = BlockResponseSerializer(block)
+        return Response(response.data, status=status.HTTP_201_CREATED)
+
+
+class BlockDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = BlockService()
+
+    def _get_object(self, request, portfolio_id: int, section_id: int, block_id: int):
+        block = self.service.retrieve(
+            portfolio_id=portfolio_id,
+            section_id=section_id,
+            block_id=block_id,
+            user=request.user,
+        )
+        return block
+
+    def get(self, request, portfolio_id: int, section_id: int, block_id: int):
+        block = self._get_object(request, portfolio_id, section_id, block_id)
+        serializer = BlockResponseSerializer(block)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, portfolio_id: int, section_id: int, block_id: int):
+        block = self._get_object(request, portfolio_id, section_id, block_id)
+        serializer = BlockPutSerializer(block, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
+        response = BlockResponseSerializer(block)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, portfolio_id: int, section_id: int, block_id: int):
+        block = self._get_object(request, portfolio_id, section_id, block_id)
+        serializer = BlockPatchSerializer(block, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
+        response = BlockResponseSerializer(block)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, portfolio_id: int, section_id: int, block_id: int):
+        block = self._get_object(request, portfolio_id, section_id, block_id)
+        self.service.delete(instance=block, user=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ElementListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ElementService()
+
+    def get(self, request, portfolio_id: int, section_id: int, block_id: int):
+        elements = self.service.list(
+            portfolio_id=portfolio_id,
+            section_id=section_id,
+            block_id=block_id,
+            user=request.user,
+        )
+        serializer = ElementResponseSerializer(elements, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, portfolio_id: int, section_id: int, block_id: int):
+        serializer = ElementCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        element = self.service.create(
+            portfolio_id=portfolio_id,
+            section_id=section_id,
+            block_id=block_id,
+            user=request.user,
+            validated_data=serializer.validated_data,
+        )
+        response = ElementResponseSerializer(element)
+        return Response(response.data, status=status.HTTP_201_CREATED)
+
+
+class ElementDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ElementService()
+
+    def _get_object(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
+        element = self.service.retrieve(
+            portfolio_id=portfolio_id,
+            section_id=section_id,
+            block_id=block_id,
+            element_id=element_id,
+            user=request.user,
+        )
+        return element
+
+    def get(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
+        element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
+        serializer = ElementResponseSerializer(element)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
+        element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
+        serializer = ElementPutSerializer(element, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
+        response = ElementResponseSerializer(element)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
+        element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
+        serializer = ElementPatchSerializer(element, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
+        response = ElementResponseSerializer(element)
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
+        element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
+        self.service.delete(instance=element, user=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
