@@ -1,56 +1,71 @@
 import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
-import { useAuth } from '../services/auth.jsx'
-import { Button, Card, ErrorBanner, Field, Input, PageHeader } from '../components/Ui.jsx'
+import ErrorState from '../components/ErrorState.jsx'
+import { useAuth } from '../services/auth.js'
 
 export default function LoginPage() {
-  const { login } = useAuth()
   const navigate = useNavigate()
+  const { login } = useAuth()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
-  async function onSubmit(e) {
-    e.preventDefault()
+  async function submitLogin(event) {
+    event.preventDefault()
+    setSubmitting(true)
     setError(null)
-    setLoading(true)
+
     try {
       await login({ username, password })
-      navigate('/app/portfolios')
+      navigate('/app/portfolios', { replace: true })
     } catch (err) {
       setError(err)
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
   return (
-    <div className="authShell">
-      <Card className="authCard">
-        <PageHeader title="Welcome back" subtitle="Sign in to manage your portfolios." />
-        <ErrorBanner error={error} />
+    <div className="pm-authShell">
+      <form className="pm-authCard" onSubmit={submitLogin}>
+        <p className="pm-authKicker">Portfolio Maker</p>
+        <h1>Sign in</h1>
+        <p>Use your account to manage portfolios and publish dynamic pages.</p>
 
-        <form onSubmit={onSubmit}>
-          <Field label="Username">
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your username" autoComplete="username" />
-          </Field>
-          <Field label="Password">
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
-          </Field>
+        <ErrorState error={error} />
 
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <Button type="submit" disabled={loading || !username || !password}>
-              {loading ? 'Signing in…' : 'Login'}
-            </Button>
-            <Link to="/register" className="smallLink">
-              Create account
-            </Link>
-          </div>
-        </form>
-      </Card>
+        <div className="pm-field">
+          <label htmlFor="login-username">Username</label>
+          <input
+            id="login-username"
+            className="pm-input"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            required
+          />
+        </div>
+
+        <div className="pm-field">
+          <label htmlFor="login-password">Password</label>
+          <input
+            id="login-password"
+            className="pm-input"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </div>
+
+        <button type="submit" className="pm-btn" disabled={submitting || !username || !password}>
+          {submitting ? 'Signing in...' : 'Login'}
+        </button>
+      </form>
     </div>
   )
 }
