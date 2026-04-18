@@ -13,6 +13,14 @@ venv/
 env/
 
 ############################
+# Environment files
+############################
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+############################
 # Poetry
 ############################
 .pytest_cache/
