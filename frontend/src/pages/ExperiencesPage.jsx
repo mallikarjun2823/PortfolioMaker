@@ -204,11 +204,10 @@ export default function ExperiencesPage() {
       <Modal
         open={createModalOpen}
         title="Create Experience"
-        subtitle="Create form opens only when you click + Add New Experience."
         onClose={() => setCreateModalOpen(false)}
       >
         <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="layoutGrid2">
             <Field label="Company">
               <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="TechCorp" />
             </Field>
@@ -216,7 +215,7 @@ export default function ExperiencesPage() {
               <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Backend Engineer" />
             </Field>
           </div>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="layoutGrid2">
             <Field label="Timeline" hint="Example: 2024 - Present">
               <Input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="2024 - Present" />
             </Field>

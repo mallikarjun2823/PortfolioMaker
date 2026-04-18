@@ -195,11 +195,10 @@ export default function SkillsPage() {
       <Modal
         open={createModalOpen}
         title="Create Skill"
-        subtitle="Create form opens only when you click + Add New Skill."
         onClose={() => setCreateModalOpen(false)}
       >
         <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+          <div className="layoutGrid3">
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Django" />
             </Field>

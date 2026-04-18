@@ -167,7 +167,7 @@ export default function ProjectsPage() {
     <div>
       <PageHeader
         title="Projects"
-        subtitle="Create, edit and delete projects. Changes always reflect backend state."
+        subtitle="Create, edit, and organize portfolio projects."
         right={
           <div className="row">
             <Button onClick={() => setCreateModalOpen(true)}>+ Add New Project</Button>
@@ -262,11 +262,10 @@ export default function ProjectsPage() {
       <Modal
         open={createModalOpen}
         title="Create Project"
-        subtitle="Create form opens only when you click + Add New Project."
         onClose={closeCreateModal}
       >
         <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="layoutGrid2">
             <Field label="Title">
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Project title" />
             </Field>

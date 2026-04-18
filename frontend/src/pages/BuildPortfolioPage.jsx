@@ -68,16 +68,16 @@ export default function BuildPortfolioPage() {
     <div>
       <PageHeader
         title="Build"
-        subtitle="Layout and preview. Sections live here (not in the main tabs)."
+        subtitle="Manage layout, preview, and publishing."
         right={<Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}`}>Back to Overview</Link>}
       />
 
       <ErrorBanner error={error} />
 
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+      <div className="layoutGrid2">
         <Card>
           <CardTitle>Sections</CardTitle>
-          <div className="subtle">Control ordering, visibility, and config.</div>
+          <div className="subtle">Manage section order, visibility, and structure.</div>
           <div className="divider" />
           <Link className="btn" to={`/app/portfolios/${portfolioId}/sections`}>Edit Sections</Link>
         </Card>
@@ -85,7 +85,7 @@ export default function BuildPortfolioPage() {
         <Card>
           <CardTitle>Preview & Share</CardTitle>
           <div className="row" style={{ justifyContent: 'space-between' }}>
-            <div className="subtle">Anyone with this link can view the portfolio without login, but only after publishing.</div>
+            <div className="subtle">Public access is enabled only after publishing.</div>
             <Pill>{isPublished ? 'Published' : 'Draft'}</Pill>
           </div>
           <div className="divider" />

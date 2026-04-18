@@ -37,7 +37,7 @@ function KeyValueTable({ rows, emptyText = 'No values.' }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ width: 70 }}>S.No</th>
+            <th style={{ width: 70 }}>#</th>
             <th>Name</th>
             <th>Value</th>
           </tr>
@@ -474,14 +474,7 @@ export default function BlocksPage() {
 
       <ErrorBanner error={error} />
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '280px minmax(0, 1fr)',
-          gap: 14,
-          alignItems: 'start'
-        }}
-      >
+      <div className="splitPanel">
         <Card>
           <CardTitle>Blocks</CardTitle>
           <div className="subtle">Select a block to configure.</div>
@@ -538,8 +531,8 @@ export default function BlocksPage() {
               <Card>
                 <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <CardTitle>Config the block</CardTitle>
-                    <div className="subtle">Use visual controls to style this block. JSON is optional advanced mode.</div>
+                    <CardTitle>Configure Block</CardTitle>
+                    <div className="subtle">Use visual controls first. Advanced JSON is optional.</div>
                   </div>
                   <div className="row">
                     <Button variant="ghost" onClick={() => move(-1)} disabled={moving || selected.order <= 1}>↑</Button>
@@ -553,7 +546,7 @@ export default function BlocksPage() {
 
                 <div className="divider" />
 
-                <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                <div className="layoutGrid3">
                   <Field label="Type">
                     <select
                       className="input"
@@ -578,7 +571,7 @@ export default function BlocksPage() {
                   </Field>
                 </div>
 
-                <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) 220px' }}>
+                <div className="layoutMainAside">
                   <Field label="Block label" hint="Used as the section title for this block.">
                     <Input
                       value={blockLabel}
@@ -620,7 +613,7 @@ export default function BlocksPage() {
 
                 <div style={{ marginBottom: 8, fontWeight: 800 }}>Style Controls (No code)</div>
 
-                <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                <div className="layoutGrid3">
                   <Field label="Text align">
                     <select
                       className="input"
@@ -661,7 +654,7 @@ export default function BlocksPage() {
                   </Field>
                 </div>
 
-                <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                <div className="layoutGrid2">
                   <Field label="Font family">
                     <select
                       className="input"
@@ -689,7 +682,7 @@ export default function BlocksPage() {
                   </Field>
                 </div>
 
-                <div className="grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+                <div className="layoutGrid4">
                   <Field label="Text color">
                     <Input
                       type="color"
@@ -728,7 +721,7 @@ export default function BlocksPage() {
                 </div>
 
                 <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <div className="subtle">These controls update block style automatically.</div>
+                  <div className="subtle">Applied instantly to this block style.</div>
                   <Button
                     variant="ghost"
                     type="button"
@@ -793,7 +786,6 @@ export default function BlocksPage() {
       <Modal
         open={createModalOpen}
         title="Create Block"
-        subtitle="Create form opens only when you click + Add New Block."
         onClose={() => setCreateModalOpen(false)}
       >
         <form onSubmit={onCreate}>

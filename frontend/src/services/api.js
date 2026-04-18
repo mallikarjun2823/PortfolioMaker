@@ -86,13 +86,17 @@ export async function apiRequest(path, { method = 'GET', token, body, headers } 
   return data
 }
 
+const listThemePresets = (token) => apiRequest('/themes/', { token })
+const getPortfolioRender = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token })
+const getPublicPortfolioRenderBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/render/`)
+
 export const api = {
   // auth
   login: (payload) => apiRequest('/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => apiRequest('/auth/register/', { method: 'POST', body: payload }),
 
   // themes
-  listThemes: (token) => apiRequest('/themes/', { token }),
+  listThemePresets,
 
   // portfolios
   listPortfolios: (token) => apiRequest('/portfolios/', { token }),
@@ -103,8 +107,8 @@ export const api = {
   deletePortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { method: 'DELETE', token }),
 
   // render
-  renderPortfolio: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token }),
-  renderPortfolioPublicBySlug: (slug) => apiRequest(`/public/portfolios/${slug}/render/`),
+  getPortfolioRender,
+  getPublicPortfolioRenderBySlug,
 
   // children
   listProjects: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/projects/`, { token }),
@@ -148,5 +152,10 @@ export const api = {
   updateElement: (token, portfolioId, sectionId, blockId, elementId, payload, { method = 'PATCH' } = {}) =>
     apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/${elementId}/`, { method, token, body: payload }),
   deleteElement: (token, portfolioId, sectionId, blockId, elementId) =>
-    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/${elementId}/`, { method: 'DELETE', token })
+    apiRequest(`/portfolios/${portfolioId}/sections/${sectionId}/blocks/${blockId}/elements/${elementId}/`, { method: 'DELETE', token }),
+
+  // backward-compatible aliases
+  listThemes: listThemePresets,
+  renderPortfolio: getPortfolioRender,
+  renderPortfolioPublicBySlug: getPublicPortfolioRenderBySlug
 }

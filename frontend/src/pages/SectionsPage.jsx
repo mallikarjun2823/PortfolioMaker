@@ -29,8 +29,8 @@ function KeyValueTable({ rows, emptyText = 'No values.' }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ width: 70 }}>S.No</th>
-            <th>Config name</th>
+            <th style={{ width: 70 }}>#</th>
+            <th>Key</th>
             <th>Value</th>
           </tr>
         </thead>
@@ -237,14 +237,7 @@ export default function SectionsPage() {
 
       <ErrorBanner error={error} />
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '280px minmax(0, 1fr)',
-          gap: 14,
-          alignItems: 'start'
-        }}
-      >
+      <div className="splitPanel">
         <Card>
           <CardTitle>Sections</CardTitle>
           <div className="subtle">Select a section to configure.</div>
@@ -301,8 +294,8 @@ export default function SectionsPage() {
               <Card>
                 <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <CardTitle>Config the section</CardTitle>
-                    <div className="subtle">Edit basics and config JSON (modal UI can be added later).</div>
+                    <CardTitle>Configure Section</CardTitle>
+                    <div className="subtle">Update section settings and content mapping.</div>
                   </div>
                   <div className="row">
                     <Button variant="ghost" onClick={() => move(-1)} disabled={moving || selected.order <= 1}>↑</Button>
@@ -316,7 +309,7 @@ export default function SectionsPage() {
 
                 <div className="divider" />
 
-                <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                <div className="layoutGrid3">
                   <Field label="Name">
                     <Input value={draft.name} onChange={(e) => setDraft((x) => ({ ...x, name: e.target.value }))} />
                   </Field>
@@ -353,7 +346,7 @@ export default function SectionsPage() {
 
               <Card>
                 <CardTitle>Lookup CSS values</CardTitle>
-                <div className="subtle">If you add a top-level `lookup` object in config, it shows up here.</div>
+                <div className="subtle">Lookup values from the optional lookup configuration.</div>
                 <div className="divider" />
                 <KeyValueTable rows={lookupRows} emptyText="No lookup values." />
               </Card>
@@ -365,7 +358,6 @@ export default function SectionsPage() {
       <Modal
         open={createModalOpen}
         title="Create Section"
-        subtitle="Create form opens only when you click + Add New Section."
         onClose={() => setCreateModalOpen(false)}
       >
         <form onSubmit={onCreate}>

@@ -69,7 +69,7 @@ export default function PortfolioOverviewPage() {
       ) : !portfolio ? (
         <EmptyState title="Portfolio not found" subtitle="This portfolio might not exist or you might not have access." />
       ) : (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+        <div className="layoutGrid2">
           <Card>
             <CardTitle>Sections</CardTitle>
             <div className="row" style={{ justifyContent: 'space-between' }}>

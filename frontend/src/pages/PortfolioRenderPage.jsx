@@ -47,7 +47,7 @@ export default function PortfolioRenderPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.renderPortfolioPublicBySlug(slug)
+      const res = await api.getPublicPortfolioRenderBySlug(slug)
       setPayload(res || null)
 
       if (token) {

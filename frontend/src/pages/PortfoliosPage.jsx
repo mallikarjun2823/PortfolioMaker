@@ -60,7 +60,7 @@ export default function PortfoliosPage() {
     ;(async () => {
       setThemesLoading(true)
       try {
-        const res = await api.listThemes(token)
+        const res = await api.listThemePresets(token)
         setThemes(Array.isArray(res) ? res : [])
       } catch {
         setThemes([])
@@ -255,7 +255,7 @@ export default function PortfoliosPage() {
     <div>
       <PageHeader
         title="Portfolios"
-        subtitle="Create and manage your portfolios. Pick one to edit its data and layout."
+        subtitle="Create and manage your portfolios."
         right={null}
       />
 
@@ -264,7 +264,7 @@ export default function PortfoliosPage() {
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
       ) : items.length === 0 ? (
-        <EmptyState title="No portfolios yet" subtitle="Click + Add Portfolio in the top nav." />
+        <EmptyState title="No portfolios yet" subtitle="Create your first portfolio from the top bar." />
       ) : (
         <div className="grid">
           {items.map((p) => {
@@ -370,10 +370,6 @@ export default function PortfoliosPage() {
                     </div>
                   </div>
                 )}
-
-                <div className="divider" />
-
-                <div className="subtle">Open this portfolio to access manage tabs.</div>
               </Card>
             )
           })}
@@ -383,7 +379,6 @@ export default function PortfoliosPage() {
       <Modal
         open={createModalOpen}
         title="Create Portfolio"
-        subtitle="Only shown on demand from + Add Portfolio action."
         onClose={closeCreateModal}
         maxWidth={1080}
       >
@@ -391,7 +386,7 @@ export default function PortfoliosPage() {
           <Field label="Title">
             <Input value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} placeholder="My Portfolio" />
           </Field>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="layoutGrid2">
             <Field label="Slug" hint="Optional; blank auto-generates">
               <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="my-portfolio" />
             </Field>
