@@ -59,6 +59,7 @@ export default function App() {
         }
       />
 
+      <Route path="/p/:slug" element={<PortfolioRenderPage />} />
       <Route path="/portfolio/:slug" element={<PortfolioRenderPage />} />
 
       <Route

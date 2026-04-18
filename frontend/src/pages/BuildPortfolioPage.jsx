@@ -15,7 +15,7 @@ export default function BuildPortfolioPage() {
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState(null)
 
-  const sharePath = portfolioSlug ? `/portfolio/${portfolioSlug}` : ''
+  const sharePath = portfolioSlug ? `/p/${portfolioSlug}` : ''
   const shareUrl = sharePath ? `${window.location.origin}${sharePath}` : ''
 
   async function copyShareLink() {
