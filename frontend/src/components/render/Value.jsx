@@ -5,6 +5,18 @@ function isHttpUrl(value) {
   return value.startsWith('http://') || value.startsWith('https://')
 }
 
+function isRelativeAssetUrl(value) {
+  if (typeof value !== 'string') return false
+  return value.startsWith('/media/') || value.startsWith('media/')
+}
+
+function toAbsoluteUrl(value) {
+  if (!value) return ''
+  if (isHttpUrl(value)) return value
+  const path = value.startsWith('/') ? value : `/${value}`
+  return `${window.location.origin}${path}`
+}
+
 export default function Value({ value }) {
   if (value === null || value === undefined) return <span className="subtle">—</span>
 
@@ -13,9 +25,10 @@ export default function Value({ value }) {
   if (typeof value === 'number') return <span>{String(value)}</span>
 
   if (typeof value === 'string') {
-    if (isHttpUrl(value)) {
+    if (isHttpUrl(value) || isRelativeAssetUrl(value)) {
+      const href = toAbsoluteUrl(value)
       return (
-        <a className="smallLink" href={value} target="_blank" rel="noreferrer">
+        <a className="smallLink" href={href} target="_blank" rel="noreferrer">
           {value}
         </a>
       )

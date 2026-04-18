@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from io import BytesIO
+
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from PIL import Image
 
-from .models import Block, Element, Portfolio, Section
+from .models import Block, Element, Portfolio, Project, Section
 
 
 class SectionCRUDTests(APITestCase):
@@ -293,6 +297,50 @@ class BlockCRUDTests(APITestCase):
 		res = self.client.put(detail_url, data={"type": "LIST", "order": 1, "is_visible": True}, format="json")
 		self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+	def test_grid_type_rejects_existing_mixed_element_sources(self):
+		self.client.force_authenticate(user=self.owner)
+
+		block_list_url = reverse(
+			"block-list-create",
+			kwargs={"portfolio_id": self.portfolio.id, "section_id": self.section.id},
+		)
+		res = self.client.post(block_list_url, data={"type": "LIST"}, format="json")
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+		block_id = res.json()["id"]
+
+		element_list_url = reverse(
+			"element-list-create",
+			kwargs={
+				"portfolio_id": self.portfolio.id,
+				"section_id": self.section.id,
+				"block_id": block_id,
+			},
+		)
+		res = self.client.post(
+			element_list_url,
+			data={"label": "Project Title", "data_source": "PROJECT", "field": "title"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+		res = self.client.post(
+			element_list_url,
+			data={"label": "Skill Name", "data_source": "SKILL", "field": "name"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+		block_detail_url = reverse(
+			"block-detail",
+			kwargs={
+				"portfolio_id": self.portfolio.id,
+				"section_id": self.section.id,
+				"block_id": block_id,
+			},
+		)
+		res = self.client.patch(block_detail_url, data={"type": "GRID"}, format="json")
+		self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class ElementCRUDTests(APITestCase):
 	def setUp(self):
@@ -477,6 +525,40 @@ class ElementCRUDTests(APITestCase):
 		res = self.client.put(detail_url, data={"label": "X"}, format="json")
 		self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+	def test_grid_block_rejects_mixed_data_sources(self):
+		self.client.force_authenticate(user=self.owner)
+		self.block.type = "GRID"
+		self.block.save(update_fields=["type"])
+
+		res = self.client.post(
+			self._list_url(),
+			data={"label": "Project Title", "data_source": "PROJECT", "field": "title"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+		e1_id = res.json()["id"]
+
+		res = self.client.post(
+			self._list_url(),
+			data={"label": "Project Description", "data_source": "PROJECT", "field": "description"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+		res = self.client.post(
+			self._list_url(),
+			data={"label": "Skill Name", "data_source": "SKILL", "field": "name"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+		res = self.client.patch(
+			self._detail_url(e1_id),
+			data={"data_source": "SKILL", "field": "name"},
+			format="json",
+		)
+		self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class PortfolioRenderTests(APITestCase):
 	def setUp(self):
@@ -521,3 +603,101 @@ class PortfolioRenderTests(APITestCase):
 		self.assertEqual(data["portfolio"]["title"], "Render Me")
 		self.assertIsInstance(data["portfolio"]["sections"], list)
 		self.assertEqual(data["portfolio"]["sections"][0]["name"], "About")
+
+	def test_public_render_by_slug_no_auth_for_published(self):
+		self.portfolio.is_published = True
+		self.portfolio.save(update_fields=["is_published"])
+
+		url = reverse("portfolio-render-public-slug", kwargs={"slug": self.portfolio.slug})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+		data = res.json()
+		self.assertIn("portfolio", data)
+		self.assertEqual(data["portfolio"]["slug"], self.portfolio.slug)
+
+	def test_public_render_by_slug_hidden_when_unpublished(self):
+		self.portfolio.is_published = False
+		self.portfolio.save(update_fields=["is_published"])
+
+		url = reverse("portfolio-render-public-slug", kwargs={"slug": self.portfolio.slug})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class PortfolioResumeUploadTests(APITestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.user = User.objects.create_user(username="resume_owner", password="password123")
+
+	def test_portfolio_resume_upload_and_render_preview(self):
+		self.client.force_authenticate(user=self.user)
+		portfolio_url = reverse("portfolio-list")
+
+		resume = SimpleUploadedFile(
+			"resume.txt",
+			b"Experienced backend developer",
+			content_type="text/plain",
+		)
+
+		res = self.client.post(
+			portfolio_url,
+			data={
+				"title": "Resume Portfolio",
+				"slug": "resume-portfolio",
+				"description": "With resume",
+				"resume": resume,
+			},
+			format="multipart",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+		portfolio_id = res.json()["id"]
+		self.assertTrue(res.json().get("resume"))
+
+		render_url = reverse("portfolio-render", kwargs={"portfolio_id": portfolio_id})
+		res = self.client.get(render_url)
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+		self.assertTrue(res.json()["portfolio"].get("resume"))
+
+
+class ProjectFileUploadTests(APITestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.user = User.objects.create_user(username="project_file_owner", password="password123")
+		self.portfolio = Portfolio.objects.create(
+			user=self.user,
+			title="Projects Portfolio",
+			slug="projects-portfolio",
+			description="",
+			theme=None,
+			is_published=False,
+		)
+
+	def test_project_image_upload_via_multipart(self):
+		self.client.force_authenticate(user=self.user)
+		list_url = reverse("project-list-create", kwargs={"portfolio_id": self.portfolio.id})
+
+		buf = BytesIO()
+		Image.new("RGB", (1, 1), color=(255, 0, 0)).save(buf, format="PNG")
+		buf.seek(0)
+		image = SimpleUploadedFile(
+			"demo.png",
+			buf.getvalue(),
+			content_type="image/png",
+		)
+
+		res = self.client.post(
+			list_url,
+			data={
+				"title": "Image Project",
+				"description": "Project with image",
+				"image": image,
+				"is_visible": True,
+			},
+			format="multipart",
+		)
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+		project_id = res.json()["id"]
+		self.assertTrue(res.json().get("image"))
+
+		project = Project.objects.get(id=project_id)
+		self.assertTrue(bool(project.image))

@@ -222,6 +222,25 @@ def _fetch_sections(portfolio: Portfolio, *, include_unpublished: bool = False) 
 
 
 class PortfolioRenderService:
+    def _serialize_payload(self, *, portfolio: Portfolio, include_unpublished: bool) -> Dict[str, Any]:
+        theme_data = None
+        if portfolio.theme is not None:
+            theme_data = {
+                "name": portfolio.theme.name,
+                "config": _safe_config(portfolio.theme.config),
+            }
+
+        return {
+            "portfolio": {
+                "title": portfolio.title,
+                "slug": portfolio.slug,
+                "description": portfolio.description,
+                "resume": _serialize_value(portfolio.resume),
+                "theme": theme_data,
+                "sections": _fetch_sections(portfolio, include_unpublished=include_unpublished),
+            }
+        }
+
     def render_portfolio(
         self,
         portfolio_id: int,
@@ -237,26 +256,27 @@ class PortfolioRenderService:
         if portfolio is None:
             raise NotFound("Portfolio not found")
 
-        theme_data = None
-        if portfolio.theme is not None:
-            theme_data = {
-                "name": portfolio.theme.name,
-                "config": _safe_config(portfolio.theme.config),
-            }
+        return self._serialize_payload(portfolio=portfolio, include_unpublished=include_unpublished)
 
-        return {
-            "portfolio": {
-                "title": portfolio.title,
-                "slug": portfolio.slug,
-                "description": portfolio.description,
-                "theme": theme_data,
-                "sections": _fetch_sections(portfolio, include_unpublished=include_unpublished),
-            }
-        }
+    def render_public_portfolio_by_slug(self, slug: str) -> Dict[str, Any]:
+        slug_value = str(slug or "").strip()
+        if not slug_value:
+            raise NotFound("Portfolio not found")
+
+        portfolio = (
+            Portfolio.objects.select_related("theme", "user")
+            .filter(slug=slug_value, is_published=True)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        if portfolio is None:
+            raise NotFound("Portfolio not found")
+
+        return self._serialize_payload(portfolio=portfolio, include_unpublished=False)
 
 
 class PortfolioService:
-    _ALLOWED_FIELDS = {"title", "slug", "description", "theme", "is_published"}
+    _ALLOWED_FIELDS = {"title", "slug", "description", "resume", "theme", "is_published"}
 
     def list(self, *, user) -> QuerySet[Portfolio]:
         return Portfolio.objects.filter(user=user).select_related("theme").order_by("-created_at", "-id")
@@ -399,6 +419,7 @@ class PortfolioService:
             title=title,
             slug=slug,
             description=description,
+            resume=validated_data.get("resume"),
             theme=theme,
             is_published=False,
         )
@@ -442,6 +463,9 @@ class PortfolioService:
             if description is None:
                 description = ""
             instance.description = str(description)
+
+        if "resume" in payload:
+            instance.resume = payload.get("resume")
 
         if "theme" in payload:
             instance.theme = self._resolve_theme(payload.get("theme"))
@@ -1087,6 +1111,25 @@ class BlockService:
         portfolio.is_published = False
         portfolio.save(update_fields=["is_published", "updated_at"])
 
+    def _validate_grid_data_source_consistency(self, *, block: Block) -> None:
+        if block.type != Block.BlockType.GRID:
+            return
+
+        sources = {
+            str(source).strip().upper()
+            for source in Element.objects.select_for_update()
+            .filter(block=block)
+            .values_list("data_source", flat=True)
+            if source is not None
+        }
+
+        if len(sources) <= 1:
+            return
+
+        raise ValidationError(
+            {"type": "GRID blocks cannot mix element data sources. Use a single data source for all elements."}
+        )
+
     def list(self, *, portfolio_id: int, section_id: int, user) -> QuerySet[Block]:
         section = self._resolve_section(portfolio_id=portfolio_id, section_id=section_id, user=user)
         return Block.objects.filter(section=section).order_by("order", "id")
@@ -1165,6 +1208,8 @@ class BlockService:
 
         if "type" in validated_data:
             current.type = self._normalize_type(validated_data.get("type"))
+            if current.type == Block.BlockType.GRID:
+                self._validate_grid_data_source_consistency(block=current)
         if "config" in validated_data:
             current.config = self._normalize_config(validated_data.get("config"))
         if "is_visible" in validated_data:
@@ -1325,6 +1370,42 @@ class ElementService:
         if changed:
             Element.objects.bulk_update(changed, ["order"])
 
+    def _validate_grid_data_source(
+        self,
+        *,
+        block: Block,
+        elements: List[Element],
+        incoming_source: Any,
+        exclude_element_id: int | None = None,
+    ) -> None:
+        if block.type != Block.BlockType.GRID:
+            return
+
+        incoming = str(incoming_source or "").strip().upper()
+        if not incoming:
+            return
+
+        existing_sources = {
+            str(e.data_source or "").strip().upper()
+            for e in elements
+            if e.id != exclude_element_id
+        }
+        existing_sources.discard("")
+
+        if len(existing_sources) > 1:
+            raise ValidationError(
+                {
+                    "data_source": "GRID block already contains mixed data sources. Normalize existing elements to one source first."
+                }
+            )
+
+        if len(existing_sources) == 1:
+            required = next(iter(existing_sources))
+            if incoming != required:
+                raise ValidationError(
+                    {"data_source": f"All elements in a GRID block must use data source '{required}'."}
+                )
+
     def list(self, *, portfolio_id: int, section_id: int, block_id: int, user) -> QuerySet[Element]:
         block = self._resolve_block(portfolio_id=portfolio_id, section_id=section_id, block_id=block_id, user=user)
         return Element.objects.filter(block=block).order_by("order", "id")
@@ -1370,6 +1451,11 @@ class ElementService:
 
         elements = self._lock_elements(block=block)
         self._resequence_orders(elements=elements)
+        self._validate_grid_data_source(
+            block=block,
+            elements=elements,
+            incoming_source=payload.get("data_source"),
+        )
 
         desired_order = payload.get("order")
         if desired_order is None:
@@ -1433,6 +1519,14 @@ class ElementService:
             current.config = self._normalize_config(validated_data.get("config"))
         if "is_visible" in validated_data:
             current.is_visible = validated_data.get("is_visible")
+
+        if block.type == Block.BlockType.GRID and "data_source" in validated_data:
+            self._validate_grid_data_source(
+                block=block,
+                elements=elements,
+                incoming_source=current.data_source,
+                exclude_element_id=current.id,
+            )
 
         if "order" in validated_data:
             desired_order = self._normalize_order(validated_data.get("order"))

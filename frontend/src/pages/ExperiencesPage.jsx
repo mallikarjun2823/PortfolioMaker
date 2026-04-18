@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom'
 
 import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
-import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, PageHeader } from '../components/Ui.jsx'
+import { toErrorMessage, useToast } from '../services/toast.jsx'
+import { Button, Card, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader } from '../components/Ui.jsx'
 
 export default function ExperiencesPage() {
   const { token } = useAuth()
+  const toast = useToast()
   const { portfolioId } = useParams()
 
   const [items, setItems] = useState([])
@@ -14,6 +16,7 @@ export default function ExperiencesPage() {
   const [error, setError] = useState(null)
 
   const [creating, setCreating] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [company, setCompany] = useState('')
   const [role, setRole] = useState('')
   const [timeline, setTimeline] = useState('')
@@ -56,15 +59,17 @@ export default function ExperiencesPage() {
       if (order !== '') payload.order = Number(order)
 
       await api.createExperience(token, portfolioId, payload)
-      alert('Experience created')
+      toast.success('Experience created')
       setCompany('')
       setRole('')
       setTimeline('')
       setOrder('')
       setIsVisible(true)
+      setCreateModalOpen(false)
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not create experience'))
     } finally {
       setCreating(false)
     }
@@ -99,11 +104,12 @@ export default function ExperiencesPage() {
       if (edit.order !== '') payload.order = Number(edit.order)
 
       await api.updateExperience(token, portfolioId, e.id, payload)
-      alert('Saved')
+      toast.success('Experience updated')
       cancelEdit()
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not save experience changes'))
     } finally {
       setSavingId(null)
     }
@@ -116,10 +122,11 @@ export default function ExperiencesPage() {
     setError(null)
     try {
       await api.deleteExperience(token, portfolioId, e.id)
-      alert('Deleted')
+      toast.success('Experience deleted')
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not delete experience'))
     }
   }
 
@@ -128,49 +135,20 @@ export default function ExperiencesPage() {
       <PageHeader
         title="Experiences"
         subtitle="Capture roles, companies and timelines."
-        right={<Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+        right={
+          <div className="row">
+            <Button onClick={() => setCreateModalOpen(true)}>+ Add New Experience</Button>
+            <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
+          </div>
+        }
       />
 
       <ErrorBanner error={error} />
 
-      <Card>
-        <CardTitle>Create Experience</CardTitle>
-        <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-            <Field label="Company">
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="TechCorp" />
-            </Field>
-            <Field label="Role">
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Backend Engineer" />
-            </Field>
-          </div>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-            <Field label="Timeline" hint="Example: 2024 - Present">
-              <Input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="2024 - Present" />
-            </Field>
-            <Field label="Order" hint="Optional">
-              <Input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="1" />
-            </Field>
-          </div>
-
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <label className="checkbox">
-              <input type="checkbox" checked={isVisible} onChange={(e) => setIsVisible(e.target.checked)} />
-              <span>Visible</span>
-            </label>
-            <Button type="submit" disabled={creating || !company.trim() || !role.trim() || !timeline.trim()}>
-              {creating ? 'Creating…' : 'Create'}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <div style={{ height: 14 }} />
-
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
       ) : items.length === 0 ? (
-        <EmptyState title="No experiences yet" subtitle="Add your first experience above." />
+        <EmptyState title="No experiences yet" subtitle="Click + Add New Experience." />
       ) : (
         <div className="grid">
           {items.map((e) => {
@@ -222,6 +200,45 @@ export default function ExperiencesPage() {
           })}
         </div>
       )}
+
+      <Modal
+        open={createModalOpen}
+        title="Create Experience"
+        subtitle="Create form opens only when you click + Add New Experience."
+        onClose={() => setCreateModalOpen(false)}
+      >
+        <form onSubmit={onCreate}>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <Field label="Company">
+              <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="TechCorp" />
+            </Field>
+            <Field label="Role">
+              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Backend Engineer" />
+            </Field>
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <Field label="Timeline" hint="Example: 2024 - Present">
+              <Input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="2024 - Present" />
+            </Field>
+            <Field label="Order" hint="Optional">
+              <Input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="1" />
+            </Field>
+          </div>
+
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <label className="checkbox">
+              <input type="checkbox" checked={isVisible} onChange={(e) => setIsVisible(e.target.checked)} />
+              <span>Visible</span>
+            </label>
+            <div className="row">
+              <Button variant="ghost" type="button" onClick={() => setCreateModalOpen(false)} disabled={creating}>Cancel</Button>
+              <Button type="submit" disabled={creating || !company.trim() || !role.trim() || !timeline.trim()}>
+                {creating ? 'Creating…' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

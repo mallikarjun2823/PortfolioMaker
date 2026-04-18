@@ -36,6 +36,7 @@ class PortfolioResponseSerializer(serializers.ModelSerializer):
             "title",
             "slug",
             "description",
+            "resume",
             "theme",
             "is_published",
             "created_at",
@@ -50,12 +51,14 @@ class PortfolioCreateSerializer(serializers.ModelSerializer):
             "title",
             "slug",
             "description",
+            "resume",
             "theme",
             "is_published",
         ]
         extra_kwargs = {
             "slug": {"required": False, "allow_blank": True},
             "description": {"required": False, "allow_blank": True},
+            "resume": {"required": False, "allow_null": True},
             "theme": {"required": False, "allow_null": True},
             "is_published": {"required": False},
         }
@@ -68,6 +71,7 @@ class PortfolioPutSerializer(serializers.ModelSerializer):
             "title",
             "slug",
             "description",
+            "resume",
             "theme",
             "is_published",
         ]
@@ -75,6 +79,7 @@ class PortfolioPutSerializer(serializers.ModelSerializer):
             # Strict PUT: require all updatable fields (slug can be blank to trigger auto-generation in service)
             "slug": {"required": True, "allow_blank": True},
             "description": {"required": True, "allow_blank": True},
+            "resume": {"required": True, "allow_null": True},
             "theme": {"required": True, "allow_null": True},
             "is_published": {"required": True},
         }
@@ -87,6 +92,7 @@ class PortfolioPatchSerializer(serializers.ModelSerializer):
             "title",
             "slug",
             "description",
+            "resume",
             "theme",
             "is_published",
         ]
@@ -94,6 +100,7 @@ class PortfolioPatchSerializer(serializers.ModelSerializer):
             "title": {"required": False},
             "slug": {"required": False, "allow_blank": True},
             "description": {"required": False, "allow_blank": True},
+            "resume": {"required": False, "allow_null": True},
             "theme": {"required": False, "allow_null": True},
             "is_published": {"required": False},
         }
@@ -503,7 +510,7 @@ _ALLOWED_ELEMENT_FIELDS_BY_SOURCE = {
     "PROJECT": {"title", "description", "github_url", "image"},
     "SKILL": {"name", "level"},
     "EXPERIENCE": {"company", "role", "timeline"},
-    "PORTFOLIO": {"title", "description"},
+    "PORTFOLIO": {"title", "description", "resume"},
 }
 
 

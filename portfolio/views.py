@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -52,7 +53,6 @@ from .services import (
 )
 
 from .models import Theme
-from .theme_presets import THEME_PRESETS
 
 
 class PortfolioRenderAPIView(APIView):
@@ -65,6 +65,16 @@ class PortfolioRenderAPIView(APIView):
             user_id=request.user.id,
             include_unpublished=True,
         )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class PublicPortfolioRenderBySlugAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    service = PortfolioRenderService()
+
+    def get(self, request, slug: str):
+        payload = self.service.render_public_portfolio_by_slug(slug)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -96,20 +106,6 @@ class ThemeListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Ensure preset themes exist so the UI can always offer them.
-        for preset in THEME_PRESETS:
-            name = str(preset.get("name") or "").strip()
-            if not name:
-                continue
-            Theme.objects.update_or_create(
-                name=name,
-                defaults={
-                    "config": dict(preset.get("config") or {}),
-                    "is_active": True,
-                    "is_default": bool(preset.get("is_default", False)),
-                },
-            )
-
         themes = Theme.objects.filter(is_active=True).order_by("-is_default", "name", "id")
         serializer = ThemeResponseSerializer(themes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -117,6 +113,7 @@ class ThemeListAPIView(APIView):
 
 class PortfolioAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = PortfolioService()
 
     def get(self, request):
@@ -134,6 +131,7 @@ class PortfolioAPIView(APIView):
 
 class PortfolioDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = PortfolioService()
 
     def _get_object(self, request, pk: int):
@@ -169,6 +167,7 @@ class PortfolioDetailAPIView(APIView):
 
 class ProjectListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = ProjectService()
 
     def get(self, request, portfolio_id: int):
@@ -190,6 +189,7 @@ class ProjectListCreateAPIView(APIView):
 
 class ProjectDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = ProjectService()
 
     def _get_object(self, request, portfolio_id: int, project_id: int):

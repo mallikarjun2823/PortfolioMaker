@@ -23,6 +23,21 @@ def user_directory_path_for_project_images(instance, filename):
     return relative_path
 
 
+def user_directory_path_for_portfolio_resume(instance, filename):
+    """Return upload path for portfolio resumes, grouped by user."""
+    username = (
+        instance.user.username
+        if instance.user and instance.user.username
+        else "anonymous"
+    )
+    relative_path = os.path.join(f"user_{username}", "portfolio", "resume", filename)
+
+    directory = os.path.join(settings.MEDIA_ROOT, os.path.dirname(relative_path))
+    os.makedirs(directory, exist_ok=True)
+
+    return relative_path
+
+
 # =========================
 # THEME
 # =========================
@@ -55,6 +70,12 @@ class Portfolio(models.Model):
     slug = models.SlugField()
 
     description = models.TextField(blank=True, default="")
+
+    resume = models.FileField(
+        upload_to=user_directory_path_for_portfolio_resume,
+        null=True,
+        blank=True,
+    )
 
     theme = models.ForeignKey(
         Theme,
@@ -167,6 +188,7 @@ class Element(models.Model):
         # Common
         TITLE = "title"
         DESCRIPTION = "description"
+        RESUME = "resume"
 
         # Project
         GITHUB = "github_url"

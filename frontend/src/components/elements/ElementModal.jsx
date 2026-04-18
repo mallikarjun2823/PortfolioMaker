@@ -27,7 +27,8 @@ const FIELDS_BY_SOURCE = {
   ],
   PORTFOLIO: [
     { value: 'title', label: 'title' },
-    { value: 'description', label: 'description' }
+    { value: 'description', label: 'description' },
+    { value: 'resume', label: 'resume' }
   ]
 }
 

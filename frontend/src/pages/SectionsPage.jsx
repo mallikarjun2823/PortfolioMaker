@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
-import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, PageHeader, Pill, Textarea } from '../components/Ui.jsx'
+import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader, Pill, Textarea } from '../components/Ui.jsx'
 import Value from '../components/render/Value.jsx'
 
 function safeJsonParseObject(text) {
@@ -61,6 +61,7 @@ export default function SectionsPage() {
 
   // create
   const [creating, setCreating] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createOrder, setCreateOrder] = useState('')
 
@@ -141,6 +142,7 @@ export default function SectionsPage() {
       const created = await api.createSection(token, portfolioId, payload)
       setCreateName('')
       setCreateOrder('')
+      setCreateModalOpen(false)
       await load()
       if (created?.id) setSelectedId(created.id)
     } catch (err) {
@@ -226,6 +228,7 @@ export default function SectionsPage() {
         subtitle="Pick a section on the left, configure it on the right."
         right={
           <div className="row">
+            <Button onClick={() => setCreateModalOpen(true)}>+ Add New Section</Button>
             <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/build`}>Back</Link>
             <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
           </div>
@@ -244,27 +247,14 @@ export default function SectionsPage() {
       >
         <Card>
           <CardTitle>Sections</CardTitle>
-          <div className="subtle">Create and select a section to configure.</div>
-          <div className="divider" />
-
-          <form onSubmit={onCreate}>
-            <Field label="New section name">
-              <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="sec1" />
-            </Field>
-            <Field label="Order" hint={`Optional (1..${sections.length + 1})`}>
-              <Input value={createOrder} onChange={(e) => setCreateOrder(e.target.value)} placeholder="1" />
-            </Field>
-            <div className="row" style={{ justifyContent: 'flex-end' }}>
-              <Button type="submit" disabled={creating || !createName.trim()}>{creating ? 'Creating…' : 'Create'}</Button>
-            </div>
-          </form>
+          <div className="subtle">Select a section to configure.</div>
 
           <div className="divider" />
 
           {loading ? (
             <div className="subtle">Loading…</div>
           ) : sections.length === 0 ? (
-            <EmptyState title="No sections" subtitle="Create the first one above." />
+            <EmptyState title="No sections" subtitle="Click + Add New Section." />
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
               {sections.map((s) => {
@@ -371,6 +361,26 @@ export default function SectionsPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={createModalOpen}
+        title="Create Section"
+        subtitle="Create form opens only when you click + Add New Section."
+        onClose={() => setCreateModalOpen(false)}
+      >
+        <form onSubmit={onCreate}>
+          <Field label="New section name">
+            <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="sec1" />
+          </Field>
+          <Field label="Order" hint={`Optional (1..${sections.length + 1})`}>
+            <Input value={createOrder} onChange={(e) => setCreateOrder(e.target.value)} placeholder="1" />
+          </Field>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" type="button" onClick={() => setCreateModalOpen(false)} disabled={creating}>Cancel</Button>
+            <Button type="submit" disabled={creating || !createName.trim()}>{creating ? 'Creating…' : 'Create'}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

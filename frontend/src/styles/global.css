@@ -30,6 +30,10 @@ a { color: inherit; text-decoration: none; }
   min-height: 100vh;
 }
 
+.appShellNoSidebar {
+  grid-template-columns: 1fr;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -93,6 +97,52 @@ a { color: inherit; text-decoration: none; }
 
 .main {
   padding: 26px;
+}
+
+.mainTopNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(79, 70, 229, 0.06);
+}
+
+.mainTopNavLeft,
+.mainTopNavRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mainTopNavBrand {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.detailTabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.detailTab {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: #111827;
+  font-weight: 600;
+}
+
+.detailTab.active {
+  background: rgba(79, 70, 229, 0.12);
+  border-color: rgba(79, 70, 229, 0.32);
 }
 
 .pageHeader {
@@ -568,6 +618,89 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
 }
 
+.toastViewport {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 120;
+  width: min(380px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 16px;
+  border-left: 6px solid transparent;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 16px 40px rgba(17, 24, 39, 0.16);
+  padding: 10px 12px;
+  animation: toastIn 220ms ease;
+}
+
+.toastMain {
+  min-width: 0;
+}
+
+.toastTitle {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 2px;
+}
+
+.toastMessage {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.toastClose {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.toastSuccess {
+  border-left-color: #16a34a;
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0.12), rgba(255, 255, 255, 0.98) 44%);
+}
+
+.toastError {
+  border-left-color: #dc2626;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.12), rgba(255, 255, 255, 0.98) 44%);
+}
+
+.toastInfo {
+  border-left-color: #2563eb;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.12), rgba(255, 255, 255, 0.98) 44%);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 680px) {
+  .toastViewport {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
 .pmInlineError {
   border: 1px solid rgba(239, 68, 68, 0.22);
   background: rgba(239, 68, 68, 0.08);
@@ -640,7 +773,7 @@ a { color: inherit; text-decoration: none; }
   justify-content: flex-end;
   gap: 10px;
   padding: 10px 0;
-  background: rgba(15, 23, 42, 0.72);
+  background: var(--pf-card);
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
@@ -673,8 +806,8 @@ a { color: inherit; text-decoration: none; }
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(900px 520px at 20% 10%, rgba(99, 102, 241, 0.18), transparent 60%),
-    linear-gradient(180deg, #0f172a, #0b1220);
+    radial-gradient(900px 520px at 20% 10%, var(--pf-accent), transparent 60%),
+    linear-gradient(180deg, var(--pf-bg), var(--pf-card));
 }
 
 /* -------------------------------
@@ -688,6 +821,10 @@ a { color: inherit; text-decoration: none; }
   --pf-card: rgba(17, 24, 39, 0.80);
   --pf-border: rgba(148, 163, 184, 0.16);
   --pf-accent: #6366f1;
+  --pf-font-family: "Segoe UI", Tahoma, sans-serif;
+  --pf-align: left;
+  color: var(--pf-text);
+  font-family: var(--pf-font-family);
 }
 
 .portfolioSite {
@@ -703,6 +840,7 @@ a { color: inherit; text-decoration: none; }
   max-width: 1100px;
   margin: 0 auto;
   padding: 0 20px;
+  text-align: var(--pf-align);
 }
 
 .pfHeroKicker {
@@ -722,7 +860,7 @@ a { color: inherit; text-decoration: none; }
   margin-top: 12px;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--pf-text);
 }
 
 .pfHeroDesc {
@@ -730,7 +868,7 @@ a { color: inherit; text-decoration: none; }
   max-width: 78ch;
   font-size: 16px;
   line-height: 1.75;
-  color: rgba(203, 213, 225, 0.92);
+  color: var(--pf-text);
   white-space: pre-wrap;
 }
 
@@ -746,6 +884,7 @@ a { color: inherit; text-decoration: none; }
   margin: 80px auto;
   padding: 0 20px;
   scroll-margin-top: 80px;
+  text-align: var(--pf-align);
 }
 
 .portfolioSiteShell .section-title {
@@ -753,12 +892,33 @@ a { color: inherit; text-decoration: none; }
   font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: rgba(226, 232, 240, 0.98);
+  color: var(--pf-text);
 }
 
 .portfolioSiteShell .pfBlock {
+  --pf-block-align: left;
+  --pf-block-font-family: inherit;
+  --pf-block-font-style: normal;
+  --pf-block-font-weight: 400;
+  --pf-block-color: var(--pf-text);
+  --pf-block-heading-color: var(--pf-text);
+  --pf-block-surface: transparent;
+  --pf-block-border: transparent;
+  --pf-block-padding: 0px;
   display: grid;
   gap: 16px;
+}
+
+.portfolioSiteShell .pfBlockBody {
+  text-align: var(--pf-block-align);
+  color: var(--pf-block-color);
+  font-family: var(--pf-block-font-family);
+  font-style: var(--pf-block-font-style);
+  font-weight: var(--pf-block-font-weight);
+  background: var(--pf-block-surface);
+  border: 1px solid var(--pf-block-border);
+  border-radius: 12px;
+  padding: var(--pf-block-padding);
 }
 
 .portfolioSiteShell .pfBlock + .pfBlock {
@@ -770,15 +930,15 @@ a { color: inherit; text-decoration: none; }
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: rgba(226, 232, 240, 0.96);
+  color: var(--pf-block-heading-color);
 }
 
 .siteEmpty {
   margin-top: 22px;
   padding: 18px 16px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-card);
   backdrop-filter: blur(12px);
 }
 
@@ -796,8 +956,8 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700;
   padding: 10px 18px;
   border-radius: 999px;
-  color: white;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: var(--pf-text);
+  background: linear-gradient(135deg, var(--pf-accent), var(--pf-bg));
   box-shadow: 0 16px 36px rgba(99, 102, 241, 0.22);
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
@@ -815,10 +975,10 @@ a { color: inherit; text-decoration: none; }
 }
 
 .siteButtonGhost {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  border: 1px solid var(--pf-border);
   box-shadow: none;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--pf-text);
 }
 
 .siteButtonGhost:hover {
@@ -872,11 +1032,12 @@ a { color: inherit; text-decoration: none; }
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.01em;
+  color: var(--pf-block-color);
 }
 
 .portfolioSiteShell .cardDesc {
   margin-top: 10px;
-  color: rgba(203, 213, 225, 0.92);
+  color: var(--pf-block-color);
   line-height: 1.7;
 }
 
@@ -888,7 +1049,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .portfolioSiteShell .link {
-  color: rgba(199, 210, 254, 0.95);
+  color: var(--pf-accent);
   text-decoration: none;
   font-weight: 650;
 }
@@ -909,7 +1070,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.14);
   border: 1px solid rgba(148, 163, 184, 0.18);
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--pf-block-color);
   font-size: 13px;
 }
 
@@ -950,11 +1111,11 @@ a { color: inherit; text-decoration: none; }
 
 .portfolioSiteShell .timelineOrg {
   margin-top: 6px;
-  color: rgba(203, 213, 225, 0.92);
+  color: var(--pf-block-color);
 }
 
 .portfolioSiteShell .timelinePeriod {
-  color: rgba(148, 163, 184, 0.92);
+  color: var(--pf-block-color);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -962,7 +1123,7 @@ a { color: inherit; text-decoration: none; }
 .portfolioSiteShell .timelineList {
   margin: 10px 0 0;
   padding-left: 18px;
-  color: rgba(203, 213, 225, 0.92);
+  color: var(--pf-block-color);
   line-height: 1.7;
 }
 
@@ -981,14 +1142,14 @@ a { color: inherit; text-decoration: none; }
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.92);
+  color: var(--pf-block-color);
   margin: 0;
 }
 
 .portfolioSiteShell .pfValue {
   margin: 0;
   line-height: 1.75;
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--pf-block-color);
   white-space: pre-wrap;
 }
 

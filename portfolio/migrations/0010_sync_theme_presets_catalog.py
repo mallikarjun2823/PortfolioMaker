@@ -1,24 +1,7 @@
-"""Theme presets.
-
-This module is intentionally simple: a small catalog of production-style themes
-stored as plain Python data, so they can be reused by seeds, migrations, or APIs.
-
-The `config` schema is currently aligned to what the project already uses:
-- primary_color
-- secondary_color
-- text_color
-- font_family
-- alignment
-
-You can extend this later (e.g. accent, muted, border) without changing callers.
-"""
-
-from __future__ import annotations
-
-from typing import Any, Dict, List
+from django.db import migrations
 
 
-THEME_PRESETS: List[Dict[str, Any]] = [
+PRESETS = [
     {
         "name": "Minimal Dark",
         "is_default": True,
@@ -121,13 +104,30 @@ THEME_PRESETS: List[Dict[str, Any]] = [
 ]
 
 
-def list_theme_presets() -> List[Dict[str, Any]]:
-    return list(THEME_PRESETS)
+def seed_catalog(apps, schema_editor):
+    Theme = apps.get_model("portfolio", "Theme")
+
+    for preset in PRESETS:
+        Theme.objects.update_or_create(
+            name=str(preset["name"]).strip(),
+            defaults={
+                "config": dict(preset.get("config") or {}),
+                "is_active": True,
+                "is_default": bool(preset.get("is_default", False)),
+            },
+        )
 
 
-def get_theme_preset(name: str) -> Dict[str, Any] | None:
-    name_norm = (name or "").strip().lower()
-    for theme in THEME_PRESETS:
-        if str(theme.get("name", "")).strip().lower() == name_norm:
-            return theme
-    return None
+def noop_reverse(apps, schema_editor):
+    pass
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("portfolio", "0009_alter_element_field"),
+    ]
+
+    operations = [
+        migrations.RunPython(seed_catalog, noop_reverse),
+    ]

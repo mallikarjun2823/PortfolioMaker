@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { api } from '../services/api.js'
+import { api, resolveAssetUrl } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
-import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, PageHeader } from '../components/Ui.jsx'
+import { toErrorMessage, useToast } from '../services/toast.jsx'
+import { Button, Card, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader } from '../components/Ui.jsx'
 
 function toStr(v) {
   if (v === null || v === undefined) return ''
@@ -12,7 +13,9 @@ function toStr(v) {
 
 export default function PortfoliosPage() {
   const { token } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -22,7 +25,9 @@ export default function PortfoliosPage() {
   const [createSlug, setCreateSlug] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [createThemeId, setCreateThemeId] = useState('')
+  const [createResumeFile, setCreateResumeFile] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
 
   const [themes, setThemes] = useState([])
   const [themesLoading, setThemesLoading] = useState(false)
@@ -32,7 +37,10 @@ export default function PortfoliosPage() {
   const [editSlug, setEditSlug] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editThemeId, setEditThemeId] = useState('')
+  const [editResumeFile, setEditResumeFile] = useState(null)
+  const [editResumeUrl, setEditResumeUrl] = useState('')
   const [saving, setSaving] = useState(false)
+  const [publishBusyId, setPublishBusyId] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -63,6 +71,21 @@ export default function PortfoliosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const shouldOpen = searchParams.get('create') === '1'
+    if (shouldOpen) setCreateModalOpen(true)
+  }, [searchParams])
+
+  function closeCreateModal() {
+    setCreateModalOpen(false)
+    setCreateResumeFile(null)
+    if (searchParams.get('create') === '1') {
+      const next = new URLSearchParams(searchParams)
+      next.delete('create')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
   async function onCreate(e) {
     e.preventDefault()
     setCreating(true)
@@ -70,21 +93,37 @@ export default function PortfoliosPage() {
     try {
       const rawThemeId = String(createThemeId || '').trim()
       const themeValue = rawThemeId ? Number(rawThemeId) : null
-      await api.createPortfolio(token, {
-        title: createTitle,
-        slug: createSlug,
-        description: createDescription,
-        theme: Number.isFinite(themeValue) ? themeValue : null,
-        is_published: false
-      })
+
+      if (createResumeFile) {
+        const form = new FormData()
+        form.append('title', createTitle)
+        form.append('slug', createSlug)
+        form.append('description', createDescription)
+        form.append('is_published', 'false')
+        form.append('resume', createResumeFile)
+        if (Number.isFinite(themeValue)) form.append('theme', String(themeValue))
+        await api.createPortfolio(token, form)
+      } else {
+        await api.createPortfolio(token, {
+          title: createTitle,
+          slug: createSlug,
+          description: createDescription,
+          theme: Number.isFinite(themeValue) ? themeValue : null,
+          is_published: false
+        })
+      }
+
       setCreateTitle('')
       setCreateSlug('')
       setCreateDescription('')
       setCreateThemeId('')
-      alert('Portfolio created')
+      setCreateResumeFile(null)
+      toast.success('Portfolio created')
+      closeCreateModal()
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not create portfolio'))
     } finally {
       setCreating(false)
     }
@@ -132,6 +171,8 @@ export default function PortfoliosPage() {
     setEditSlug(toStr(p.slug))
     setEditDescription(toStr(p.description))
     setEditThemeId(toStr(p.theme))
+    setEditResumeFile(null)
+    setEditResumeUrl(toStr(p.resume))
   }
 
   function cancelEdit() {
@@ -140,6 +181,8 @@ export default function PortfoliosPage() {
     setEditSlug('')
     setEditDescription('')
     setEditThemeId('')
+    setEditResumeFile(null)
+    setEditResumeUrl('')
   }
 
   async function onSave(id) {
@@ -148,17 +191,30 @@ export default function PortfoliosPage() {
     try {
       const rawThemeId = String(editThemeId || '').trim()
       const themeValue = rawThemeId ? Number(rawThemeId) : null
-      await api.updatePortfolio(token, id, {
-        title: editTitle,
-        slug: editSlug,
-        description: editDescription,
-        theme: Number.isFinite(themeValue) ? themeValue : null
-      })
-      alert('Saved')
+
+      if (editResumeFile) {
+        const form = new FormData()
+        form.append('title', editTitle)
+        form.append('slug', editSlug)
+        form.append('description', editDescription)
+        form.append('resume', editResumeFile)
+        if (Number.isFinite(themeValue)) form.append('theme', String(themeValue))
+        await api.updatePortfolio(token, id, form)
+      } else {
+        await api.updatePortfolio(token, id, {
+          title: editTitle,
+          slug: editSlug,
+          description: editDescription,
+          theme: Number.isFinite(themeValue) ? themeValue : null
+        })
+      }
+
+      toast.success('Portfolio updated')
       cancelEdit()
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not save portfolio changes'))
     } finally {
       setSaving(false)
     }
@@ -171,10 +227,27 @@ export default function PortfoliosPage() {
     setError(null)
     try {
       await api.deletePortfolio(token, id)
-      alert('Deleted')
+      toast.success('Portfolio deleted')
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not delete portfolio'))
+    }
+  }
+
+  async function togglePublish(p) {
+    if (!p?.id) return
+    setPublishBusyId(p.id)
+    setError(null)
+    try {
+      await api.updatePortfolio(token, p.id, { is_published: !p.is_published })
+      toast.success(!p.is_published ? 'Portfolio published' : 'Portfolio moved to draft')
+      await load()
+    } catch (err) {
+      setError(err)
+      toast.error(toErrorMessage(err, 'Could not update publish status'))
+    } finally {
+      setPublishBusyId(null)
     }
   }
 
@@ -183,73 +256,15 @@ export default function PortfoliosPage() {
       <PageHeader
         title="Portfolios"
         subtitle="Create and manage your portfolios. Pick one to edit its data and layout."
-        right={<Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+        right={null}
       />
 
       <ErrorBanner error={error} />
 
-      <Card>
-        <CardTitle>Create Portfolio</CardTitle>
-        <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-            <Field label="Title">
-              <Input value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} placeholder="My Portfolio" />
-            </Field>
-            <Field label="Slug" hint="Optional; blank auto-generates">
-              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="my-portfolio" />
-            </Field>
-            <Field label="Description">
-              <Input value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Short summary" />
-            </Field>
-          </div>
-
-          <Field label="Theme" hint="Pick a theme visually (optional)">
-            {themesLoading ? (
-              <div className="subtle">Loading themes…</div>
-            ) : (
-              <div className="themePickGrid">
-                <button
-                  type="button"
-                  className={`themePickCard ${!createThemeId ? 'themePickCardSelected' : ''}`.trim()}
-                  onClick={() => setCreateThemeId('')}
-                >
-                  <div className="themePickPreview" style={{ background: 'var(--card)', color: 'var(--text)' }}>
-                    <div className="themePickTitle">Default</div>
-                    <div className="themePickSub">Use app defaults</div>
-                    <div className="themePickMiniCard" style={{ background: 'rgba(17, 24, 39, 0.06)', color: 'var(--text)' }}>
-                      <div className="themePickMiniRow" />
-                      <div className="themePickMiniRow themePickMiniRowShort" />
-                    </div>
-                  </div>
-                  <div className="themePickMeta">
-                    <div className="themePickName">No theme</div>
-                    <div className="themePickSwatches">
-                      <span className="themePickSwatch" style={{ background: 'var(--bg)' }} />
-                      <span className="themePickSwatch" style={{ background: 'var(--card)' }} />
-                      <span className="themePickSwatch" style={{ background: 'var(--text)' }} />
-                    </div>
-                  </div>
-                </button>
-
-                {themes.map((t) => renderThemeCard(t, { selected: String(t.id) === String(createThemeId), onSelect: setCreateThemeId }))}
-              </div>
-            )}
-          </Field>
-
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <Button type="submit" disabled={creating || !createTitle.trim()}>
-              {creating ? 'Creating…' : 'Create Portfolio'}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <div style={{ height: 14 }} />
-
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
       ) : items.length === 0 ? (
-        <EmptyState title="No portfolios yet" subtitle="Create your first portfolio above." />
+        <EmptyState title="No portfolios yet" subtitle="Click + Add Portfolio in the top nav." />
       ) : (
         <div className="grid">
           {items.map((p) => {
@@ -260,9 +275,19 @@ export default function PortfoliosPage() {
                   <div>
                     <div style={{ fontWeight: 800, fontSize: 16 }}>{p.title}</div>
                     <div className="subtle">/{p.slug}</div>
+                    <div className="subtle" style={{ marginTop: 4 }}>
+                      {p.is_published ? 'Published' : 'Draft'}
+                    </div>
                   </div>
                   <div className="row">
                     <Button variant="ghost" onClick={() => navigate(`/app/portfolios/${p.id}`)}>Open</Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => togglePublish(p)}
+                      disabled={publishBusyId === p.id}
+                    >
+                      {publishBusyId === p.id ? 'Saving…' : p.is_published ? 'Unpublish' : 'Publish'}
+                    </Button>
                     <Button variant="ghost" onClick={() => startEdit(p)} disabled={isEditing}>Edit</Button>
                     <Button variant="danger" onClick={() => onDelete(p.id)}>Delete</Button>
                   </div>
@@ -271,7 +296,14 @@ export default function PortfoliosPage() {
                 <div className="divider" />
 
                 {!isEditing ? (
-                  <div style={{ color: 'var(--muted)', fontSize: 13 }}>{p.description || 'No description'}</div>
+                  <div>
+                    <div style={{ color: 'var(--muted)', fontSize: 13 }}>{p.description || 'No description'}</div>
+                    {p.resume ? (
+                      <div style={{ marginTop: 8 }}>
+                        <a className="smallLink" href={resolveAssetUrl(p.resume)} target="_blank" rel="noreferrer">View Resume</a>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <div>
                     <Field label="Title">
@@ -282,6 +314,19 @@ export default function PortfoliosPage() {
                     </Field>
                     <Field label="Description">
                       <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+                    </Field>
+
+                    <Field label="Resume File" hint="Optional. Upload a new file to replace current resume.">
+                      <Input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        onChange={(e) => setEditResumeFile(e.target.files?.[0] || null)}
+                      />
+                      {editResumeUrl ? (
+                        <div className="fieldHint">
+                          Current resume: <a className="smallLink" href={resolveAssetUrl(editResumeUrl)} target="_blank" rel="noreferrer">Open</a>
+                        </div>
+                      ) : null}
                     </Field>
 
                     <Field label="Theme" hint="Pick a theme visually (optional)">
@@ -328,15 +373,82 @@ export default function PortfoliosPage() {
 
                 <div className="divider" />
 
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <Link className="smallLink" to={`/app/portfolios/${p.id}/projects`}>Manage Projects</Link>
-                  <Link className="smallLink" to={`/app/portfolios/${p.id}/build`}>Build</Link>
-                </div>
+                <div className="subtle">Open this portfolio to access manage tabs.</div>
               </Card>
             )
           })}
         </div>
       )}
+
+      <Modal
+        open={createModalOpen}
+        title="Create Portfolio"
+        subtitle="Only shown on demand from + Add Portfolio action."
+        onClose={closeCreateModal}
+        maxWidth={1080}
+      >
+        <form onSubmit={onCreate}>
+          <Field label="Title">
+            <Input value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} placeholder="My Portfolio" />
+          </Field>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <Field label="Slug" hint="Optional; blank auto-generates">
+              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="my-portfolio" />
+            </Field>
+            <Field label="Description">
+              <Input value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Short summary" />
+            </Field>
+          </div>
+
+          <Field label="Resume File" hint="Optional (PDF/DOC/TXT).">
+            <Input
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={(e) => setCreateResumeFile(e.target.files?.[0] || null)}
+            />
+          </Field>
+
+          <Field label="Theme" hint="Pick a theme visually (optional)">
+            {themesLoading ? (
+              <div className="subtle">Loading themes…</div>
+            ) : (
+              <div className="themePickGrid">
+                <button
+                  type="button"
+                  className={`themePickCard ${!createThemeId ? 'themePickCardSelected' : ''}`.trim()}
+                  onClick={() => setCreateThemeId('')}
+                >
+                  <div className="themePickPreview" style={{ background: 'var(--card)', color: 'var(--text)' }}>
+                    <div className="themePickTitle">Default</div>
+                    <div className="themePickSub">Use app defaults</div>
+                    <div className="themePickMiniCard" style={{ background: 'rgba(17, 24, 39, 0.06)', color: 'var(--text)' }}>
+                      <div className="themePickMiniRow" />
+                      <div className="themePickMiniRow themePickMiniRowShort" />
+                    </div>
+                  </div>
+                  <div className="themePickMeta">
+                    <div className="themePickName">No theme</div>
+                    <div className="themePickSwatches">
+                      <span className="themePickSwatch" style={{ background: 'var(--bg)' }} />
+                      <span className="themePickSwatch" style={{ background: 'var(--card)' }} />
+                      <span className="themePickSwatch" style={{ background: 'var(--text)' }} />
+                    </div>
+                  </div>
+                </button>
+
+                {themes.map((t) => renderThemeCard(t, { selected: String(t.id) === String(createThemeId), onSelect: setCreateThemeId }))}
+              </div>
+            )}
+          </Field>
+
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" type="button" onClick={closeCreateModal} disabled={creating}>Cancel</Button>
+            <Button type="submit" disabled={creating || !createTitle.trim()}>
+              {creating ? 'Creating…' : 'Create Portfolio'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

@@ -12,6 +12,26 @@ function buildUrl(path) {
   return `${base}${p}`
 }
 
+function getApiOrigin() {
+  const base = getBaseUrl().trim()
+  if (/^https?:\/\//i.test(base)) {
+    try {
+      return new URL(base).origin
+    } catch {
+      return window.location.origin
+    }
+  }
+  return window.location.origin
+}
+
+export function resolveAssetUrl(value) {
+  if (!value) return ''
+  const raw = String(value).trim()
+  if (!raw) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  return `${getApiOrigin()}${raw.startsWith('/') ? raw : `/${raw}`}`
+}
+
 async function parseJsonSafe(res) {
   const text = await res.text()
   if (!text) return null
@@ -43,7 +63,9 @@ export async function apiRequest(path, { method = 'GET', token, body, headers } 
   }
 
   let payload
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    payload = body
+  } else if (body !== undefined) {
     finalHeaders['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)
   }
@@ -82,6 +104,7 @@ export const api = {
 
   // render
   renderPortfolio: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token }),
+  renderPortfolioPublicBySlug: (slug) => apiRequest(`/public/portfolios/${slug}/render/`),
 
   // children
   listProjects: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/projects/`, { token }),

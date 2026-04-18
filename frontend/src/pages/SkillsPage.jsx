@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom'
 
 import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
-import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, PageHeader } from '../components/Ui.jsx'
+import { toErrorMessage, useToast } from '../services/toast.jsx'
+import { Button, Card, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader } from '../components/Ui.jsx'
 
 export default function SkillsPage() {
   const { token } = useAuth()
+  const toast = useToast()
   const { portfolioId } = useParams()
 
   const [items, setItems] = useState([])
@@ -14,6 +16,7 @@ export default function SkillsPage() {
   const [error, setError] = useState(null)
 
   const [creating, setCreating] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [name, setName] = useState('')
   const [level, setLevel] = useState('')
   const [order, setOrder] = useState('')
@@ -54,14 +57,16 @@ export default function SkillsPage() {
       if (order !== '') payload.order = Number(order)
 
       await api.createSkill(token, portfolioId, payload)
-      alert('Skill created')
+      toast.success('Skill created')
       setName('')
       setLevel('')
       setOrder('')
       setIsVisible(true)
+      setCreateModalOpen(false)
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not create skill'))
     } finally {
       setCreating(false)
     }
@@ -94,11 +99,12 @@ export default function SkillsPage() {
       if (edit.order !== '') payload.order = Number(edit.order)
 
       await api.updateSkill(token, portfolioId, s.id, payload)
-      alert('Saved')
+      toast.success('Skill updated')
       cancelEdit()
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not save skill changes'))
     } finally {
       setSavingId(null)
     }
@@ -111,10 +117,11 @@ export default function SkillsPage() {
     setError(null)
     try {
       await api.deleteSkill(token, portfolioId, s.id)
-      alert('Deleted')
+      toast.success('Skill deleted')
       await load()
     } catch (err) {
       setError(err)
+      toast.error(toErrorMessage(err, 'Could not delete skill'))
     }
   }
 
@@ -123,44 +130,20 @@ export default function SkillsPage() {
       <PageHeader
         title="Skills"
         subtitle="Maintain a clean skill list with levels and ordering."
-        right={<Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+        right={
+          <div className="row">
+            <Button onClick={() => setCreateModalOpen(true)}>+ Add New Skill</Button>
+            <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
+          </div>
+        }
       />
 
       <ErrorBanner error={error} />
 
-      <Card>
-        <CardTitle>Create Skill</CardTitle>
-        <form onSubmit={onCreate}>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-            <Field label="Name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Django" />
-            </Field>
-            <Field label="Level" hint="Number (e.g., 1-10)">
-              <Input value={level} onChange={(e) => setLevel(e.target.value)} placeholder="8" />
-            </Field>
-            <Field label="Order" hint="Optional">
-              <Input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="1" />
-            </Field>
-          </div>
-
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <label className="checkbox">
-              <input type="checkbox" checked={isVisible} onChange={(e) => setIsVisible(e.target.checked)} />
-              <span>Visible</span>
-            </label>
-            <Button type="submit" disabled={creating || !name.trim() || level === ''}>
-              {creating ? 'Creating…' : 'Create'}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <div style={{ height: 14 }} />
-
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
       ) : items.length === 0 ? (
-        <EmptyState title="No skills yet" subtitle="Add your first skill above." />
+        <EmptyState title="No skills yet" subtitle="Click + Add New Skill." />
       ) : (
         <div className="grid">
           {items.map((s) => {
@@ -208,6 +191,40 @@ export default function SkillsPage() {
           })}
         </div>
       )}
+
+      <Modal
+        open={createModalOpen}
+        title="Create Skill"
+        subtitle="Create form opens only when you click + Add New Skill."
+        onClose={() => setCreateModalOpen(false)}
+      >
+        <form onSubmit={onCreate}>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            <Field label="Name">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Django" />
+            </Field>
+            <Field label="Level" hint="Number (e.g., 1-10)">
+              <Input value={level} onChange={(e) => setLevel(e.target.value)} placeholder="8" />
+            </Field>
+            <Field label="Order" hint="Optional">
+              <Input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="1" />
+            </Field>
+          </div>
+
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <label className="checkbox">
+              <input type="checkbox" checked={isVisible} onChange={(e) => setIsVisible(e.target.checked)} />
+              <span>Visible</span>
+            </label>
+            <div className="row">
+              <Button variant="ghost" type="button" onClick={() => setCreateModalOpen(false)} disabled={creating}>Cancel</Button>
+              <Button type="submit" disabled={creating || !name.trim() || level === ''}>
+                {creating ? 'Creating…' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

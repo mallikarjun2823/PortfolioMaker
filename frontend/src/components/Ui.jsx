@@ -75,3 +75,21 @@ export function ErrorBanner({ error }) {
     </div>
   )
 }
+
+export function Modal({ open, title, subtitle, onClose, children, maxWidth = 720 }) {
+  if (!open) return null
+  return (
+    <div className="pmModalOverlay" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="pmModalCard" style={{ width: `min(${maxWidth}px, 100%)` }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="pmModalTop">
+          <div>
+            <div className="pmModalTitle">{title}</div>
+            {subtitle ? <div className="pmModalSubtitle">{subtitle}</div> : null}
+          </div>
+          <button type="button" className="iconBtn" onClick={onClose} title="Close">x</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}

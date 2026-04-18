@@ -30,6 +30,33 @@ function inferHeading(type) {
   return null
 }
 
+function normalizeAlign(value) {
+  const v = String(value || '').trim().toLowerCase()
+  if (v === 'left' || v === 'center' || v === 'right') return v
+  return 'left'
+}
+
+function normalizeFontStyle(value) {
+  const v = String(value || '').trim().toLowerCase()
+  if (v === 'italic') return 'italic'
+  return 'normal'
+}
+
+function normalizeWeight(value) {
+  const v = String(value || '').trim()
+  if (['300', '400', '500', '600', '700', '800'].includes(v)) return v
+  return '400'
+}
+
+function normalizePadding(value) {
+  const v = String(value || '').trim().toLowerCase()
+  if (v === 'none') return '0px'
+  if (v === 'sm') return '10px'
+  if (v === 'md') return '16px'
+  if (v === 'lg') return '22px'
+  return '0px'
+}
+
 export default function BlockRenderer({ block, index = 0 }) {
   if (!block) return null
 
@@ -37,29 +64,53 @@ export default function BlockRenderer({ block, index = 0 }) {
   const items = asArray(block.items)
   if (items.length === 0) return null
 
-  const explicitHeading = pickText(block.config, ['title', 'heading', 'label'])
+  const config = block.config && typeof block.config === 'object' ? block.config : {}
+  const explicitHeading = pickText(config, ['title', 'heading', 'label'])
   const autoHeading = inferHeading(type)
   const heading = explicitHeading || autoHeading
-  const shouldShowHeading = Boolean(heading)
+  const shouldShowHeading = config.show_title !== false && Boolean(heading)
+  const styleConfig = config.style && typeof config.style === 'object' ? config.style : {}
+
+  const blockVars = {
+    '--pf-block-align': normalizeAlign(styleConfig.text_align),
+    '--pf-block-font-family': String(styleConfig.font_family || '').trim() || 'inherit',
+    '--pf-block-font-style': normalizeFontStyle(styleConfig.font_style),
+    '--pf-block-font-weight': normalizeWeight(styleConfig.font_weight),
+    '--pf-block-color': String(styleConfig.text_color || '').trim() || 'var(--pf-text)',
+    '--pf-block-heading-color': String(styleConfig.heading_color || '').trim() || 'var(--pf-text)',
+    '--pf-block-surface': String(styleConfig.surface_color || '').trim() || 'transparent',
+    '--pf-block-border': String(styleConfig.border_color || '').trim() || 'transparent',
+    '--pf-block-padding': normalizePadding(styleConfig.padding),
+  }
+
+  const headingStyle = {
+    color: 'var(--pf-block-heading-color)',
+    fontFamily: 'var(--pf-block-font-family)',
+    fontStyle: 'var(--pf-block-font-style)',
+    fontWeight: 'var(--pf-block-font-weight)',
+    textAlign: 'var(--pf-block-align)',
+  }
 
   return (
     <Reveal delay={Math.min(index * 60, 240)}>
-      <div className="pfBlock">
-        {shouldShowHeading ? <h3 className="pfBlockHeading">{heading}</h3> : null}
+      <div className="pfBlock" style={blockVars}>
+        {shouldShowHeading ? <h3 className="pfBlockHeading" style={headingStyle}>{heading}</h3> : null}
 
-        {type === 'GRID' ? (
-          <GridBlock items={items} />
-        ) : type === 'TIMELINE' ? (
-          <TimelineBlock items={items} />
-        ) : type === 'LIST' ? (
-          <ListBlock items={items} />
-        ) : type === 'KEY_VALUE' ? (
-          <KeyValueBlock items={items} />
-        ) : type === 'IMAGE' ? (
-          <ImageBlock items={items} />
-        ) : (
-          <ListBlock items={items} />
-        )}
+        <div className="pfBlockBody">
+          {type === 'GRID' ? (
+            <GridBlock items={items} />
+          ) : type === 'TIMELINE' ? (
+            <TimelineBlock items={items} />
+          ) : type === 'LIST' ? (
+            <ListBlock items={items} />
+          ) : type === 'KEY_VALUE' ? (
+            <KeyValueBlock items={items} />
+          ) : type === 'IMAGE' ? (
+            <ImageBlock items={items} />
+          ) : (
+            <ListBlock items={items} />
+          )}
+        </div>
       </div>
     </Reveal>
   )

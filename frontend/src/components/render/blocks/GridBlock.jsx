@@ -10,12 +10,22 @@ import {
   stringifyValue
 } from './utils.js'
 
+function primitiveValues(item) {
+  if (!isObject(item)) return []
+  const values = []
+  for (const value of Object.values(item)) {
+    if (typeof value === 'string' && value.trim()) values.push(value.trim())
+    else if (typeof value === 'number') values.push(String(value))
+  }
+  return values
+}
+
 export default function GridBlock({ items }) {
   const rows = asArray(items)
   if (rows.length === 0) return null
 
-  const titleKeys = ['title', 'name', 'project', 'project name', 'project_name', 'heading']
-  const descriptionKeys = ['description', 'summary', 'details', 'about']
+  const titleKeys = ['title', 'name', 'project', 'project name', 'project_name', 'heading', 'skills', 'skill', 'skill name', 'skill_name', 'skillname']
+  const descriptionKeys = ['description', 'summary', 'details', 'about', 'level', 'proficiency', 'rating']
   const githubKeys = ['github', 'github url', 'github_url', 'repository', 'repo', 'repo_url']
   const liveKeys = ['url', 'link', 'live', 'live url', 'live_url', 'website']
   const tagKeys = ['tags', 'tech', 'stack', 'skills', 'technologies']
@@ -24,8 +34,9 @@ export default function GridBlock({ items }) {
   const projects = rows
     .map((raw) => (isObject(raw) ? raw : { title: stringifyValue(raw) }))
     .filter((item) => {
-      const rawTitle = extractText(item, titleKeys)
-      const rawDesc = extractText(item, descriptionKeys)
+      const genericValues = primitiveValues(item)
+      const rawTitle = extractText(item, titleKeys) || genericValues[0] || null
+      const rawDesc = extractText(item, descriptionKeys) || genericValues[1] || null
       const rawGithub = extractUrl(item, githubKeys, { github: true })
       const rawLive = extractUrl(item, liveKeys)
       const rawImage = extractUrl(item, imageKeys)
@@ -37,8 +48,9 @@ export default function GridBlock({ items }) {
   return (
     <div className="pfGrid">
       {projects.map((item, idx) => {
-        const title = extractText(item, titleKeys) || `Project ${idx + 1}`
-        const description = extractText(item, descriptionKeys)
+        const genericValues = primitiveValues(item)
+        const title = extractText(item, titleKeys) || genericValues[0] || `Item ${idx + 1}`
+        const description = extractText(item, descriptionKeys) || genericValues[1] || null
         const github = extractUrl(item, githubKeys, { github: true })
         const live = extractUrl(item, liveKeys)
         const tags = extractArray(item, tagKeys)

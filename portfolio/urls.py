@@ -14,6 +14,11 @@ urlpatterns = [
         name="portfolio-render",
     ),
     path(
+        "public/portfolios/<slug:slug>/render/",
+        views.PublicPortfolioRenderBySlugAPIView.as_view(),
+        name="portfolio-render-public-slug",
+    ),
+    path(
         "portfolios/<int:portfolio_id>/projects/",
         views.ProjectListCreateAPIView.as_view(),
         name="project-list-create",

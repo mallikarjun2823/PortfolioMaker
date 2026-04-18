@@ -26,6 +26,15 @@ function Protected({ children }) {
   return children
 }
 
+function PublicOnly({ children }) {
+  const { token, loading } = useAuth()
+
+  if (loading) return <div style={{ padding: 24 }}>Loading…</div>
+  if (token) return <Navigate to="/app/portfolios" replace />
+
+  return children
+}
+
 export default function App() {
   const { token } = useAuth()
 
@@ -33,8 +42,24 @@ export default function App() {
     <Routes>
       <Route path="/" element={token ? <Navigate to="/app/portfolios" replace /> : <Navigate to="/login" replace />} />
 
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/login"
+        element={
+          <PublicOnly>
+            <LoginPage />
+          </PublicOnly>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <PublicOnly>
+            <RegisterPage />
+          </PublicOnly>
+        }
+      />
+
+      <Route path="/portfolio/:slug" element={<PortfolioRenderPage />} />
 
       <Route
         path="/app"
@@ -48,7 +73,6 @@ export default function App() {
 
         <Route path="portfolios/:portfolioId" element={<PortfolioOverviewPage />} />
         <Route path="portfolios/:portfolioId/build" element={<BuildPortfolioPage />} />
-        <Route path="portfolios/:portfolioId/preview" element={<PortfolioRenderPage />} />
         <Route path="portfolios/:portfolioId/projects" element={<ProjectsPage />} />
         <Route path="portfolios/:portfolioId/skills" element={<SkillsPage />} />
         <Route path="portfolios/:portfolioId/experiences" element={<ExperiencesPage />} />

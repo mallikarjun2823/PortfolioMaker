@@ -2,6 +2,15 @@ import React from 'react'
 
 import { asArray, extractText, isObject, stringifyValue } from './utils.js'
 
+function firstPrimitiveText(obj) {
+  if (!isObject(obj)) return ''
+  for (const value of Object.values(obj)) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number') return String(value)
+  }
+  return ''
+}
+
 export default function ListBlock({ items }) {
   const rows = asArray(items)
   if (rows.length === 0) return null
@@ -13,8 +22,9 @@ export default function ListBlock({ items }) {
       if (!isObject(raw)) return stringifyValue(raw)
 
       return (
-        extractText(raw, ['skill', 'name', 'title', 'label']) ||
-        extractText(raw, ['value']) ||
+        extractText(raw, ['skill', 'skills', 'skill name', 'skill_name', 'skillname', 'name', 'title', 'label']) ||
+        extractText(raw, ['value', 'text']) ||
+        firstPrimitiveText(raw) ||
         ''
       )
     })
