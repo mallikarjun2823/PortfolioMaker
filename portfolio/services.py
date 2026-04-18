@@ -17,7 +17,7 @@ from django.utils.text import slugify
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Block, Element, Experience, Portfolio, Project, Section, Skill, Theme
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
 
 
 service_logger = logging.getLogger("portfolio.service")
@@ -33,6 +33,14 @@ OPERATOR_MAP = {
     "contains": "__icontains",
     "icontains": "__icontains",
     "in": "__in",
+}
+
+
+_ALLOWED_ELEMENT_FIELDS_BY_SOURCE = {
+    Element.DataSource.PROJECT: {"title", "description", "github_url", "image"},
+    Element.DataSource.SKILL: {"name", "level"},
+    Element.DataSource.EXPERIENCE: {"company", "role", "timeline"},
+    Element.DataSource.PORTFOLIO: {"title", "description", "resume"},
 }
 
 
@@ -221,24 +229,96 @@ def _fetch_sections(portfolio: Portfolio, *, include_unpublished: bool = False) 
     ]
 
 
+def _serialize_theme_payload(theme: Theme | None) -> Dict[str, Any] | None:
+    if theme is None:
+        return None
+
+    return {
+        "id": theme.id,
+        "name": theme.name,
+        "config": _safe_config(theme.config),
+    }
+
+
+def _serialize_portfolio_data(
+    portfolio: Portfolio,
+    *,
+    visible_only: bool,
+) -> Dict[str, List[Dict[str, Any]]]:
+    projects_qs = Project.objects.filter(portfolio=portfolio)
+    skills_qs = Skill.objects.filter(portfolio=portfolio)
+    experiences_qs = Experience.objects.filter(portfolio=portfolio)
+
+    if visible_only:
+        projects_qs = projects_qs.filter(is_visible=True)
+        skills_qs = skills_qs.filter(is_visible=True)
+        experiences_qs = experiences_qs.filter(is_visible=True)
+
+    projects = [
+        {
+            "id": project.id,
+            "title": project.title,
+            "description": project.description,
+            "github_url": project.github_url,
+            "image": _serialize_value(project.image),
+            "order": project.order,
+            "is_visible": project.is_visible,
+        }
+        for project in projects_qs.order_by("order", "id")
+    ]
+
+    skills = [
+        {
+            "id": skill.id,
+            "name": skill.name,
+            "level": skill.level,
+            "order": skill.order,
+            "is_visible": skill.is_visible,
+        }
+        for skill in skills_qs.order_by("order", "id")
+    ]
+
+    experience = [
+        {
+            "id": item.id,
+            "company": item.company,
+            "role": item.role,
+            "timeline": item.timeline,
+            "order": item.order,
+            "is_visible": item.is_visible,
+        }
+        for item in experiences_qs.order_by("order", "id")
+    ]
+
+    return {
+        "projects": projects,
+        "skills": skills,
+        "experience": experience,
+        # Backward-compatible alias.
+        "experiences": experience,
+    }
+
+
 class PortfolioRenderService:
     def _serialize_payload(self, *, portfolio: Portfolio, include_unpublished: bool) -> Dict[str, Any]:
-        theme_data = None
-        if portfolio.theme is not None:
-            theme_data = {
-                "name": portfolio.theme.name,
-                "config": _safe_config(portfolio.theme.config),
-            }
+        theme_data = _serialize_theme_payload(portfolio.theme)
+        sections = _fetch_sections(portfolio, include_unpublished=include_unpublished)
+        data = _serialize_portfolio_data(portfolio, visible_only=True)
+
+        portfolio_payload = {
+            "title": portfolio.title,
+            "slug": portfolio.slug,
+            "description": portfolio.description,
+            "resume": _serialize_value(portfolio.resume),
+            "theme": theme_data,
+            "sections": sections,
+        }
 
         return {
-            "portfolio": {
-                "title": portfolio.title,
-                "slug": portfolio.slug,
-                "description": portfolio.description,
-                "resume": _serialize_value(portfolio.resume),
-                "theme": theme_data,
-                "sections": _fetch_sections(portfolio, include_unpublished=include_unpublished),
-            }
+            "portfolio": portfolio_payload,
+            "theme": theme_data,
+            "sections": sections,
+            "data": data,
         }
 
     def render_portfolio(
@@ -273,6 +353,348 @@ class PortfolioRenderService:
             raise NotFound("Portfolio not found")
 
         return self._serialize_payload(portfolio=portfolio, include_unpublished=False)
+
+
+class PortfolioOverviewService:
+    def get_overview(self, *, portfolio_id: int, user) -> Dict[str, Any]:
+        portfolio = (
+            Portfolio.objects.select_related("theme")
+            .filter(id=portfolio_id, user_id=user.id)
+            .first()
+        )
+        if portfolio is None:
+            raise NotFound("Portfolio not found.")
+
+        domain_data = _serialize_portfolio_data(portfolio, visible_only=False)
+
+        return {
+            "portfolio": {
+                "id": portfolio.id,
+                "title": portfolio.title,
+                "slug": portfolio.slug,
+                "description": portfolio.description,
+                "resume": _serialize_value(portfolio.resume),
+                "theme": _serialize_theme_payload(portfolio.theme),
+                "is_published": portfolio.is_published,
+                "created_at": _serialize_value(portfolio.created_at),
+                "updated_at": _serialize_value(portfolio.updated_at),
+            },
+            "projects": domain_data["projects"],
+            "skills": domain_data["skills"],
+            "experience": domain_data["experience"],
+        }
+
+
+class PortfolioTemplateService:
+    def list_templates(self) -> QuerySet[PortfolioTemplate]:
+        return PortfolioTemplate.objects.filter(is_active=True).order_by("name", "id")
+
+    def get_template(self, template_id: int) -> PortfolioTemplate:
+        try:
+            return PortfolioTemplate.objects.get(id=template_id, is_active=True)
+        except PortfolioTemplate.DoesNotExist:
+            raise NotFound("Template not found.")
+
+    def _coerce_order(self, value: Any, *, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValidationError({"config": "Order must be an integer."})
+
+    def _normalize_template_config(self, config: Any) -> List[Dict[str, Any]]:
+        if not isinstance(config, dict):
+            raise ValidationError({"config": "Template config must be an object."})
+
+        raw_sections = config.get("sections", [])
+        if not isinstance(raw_sections, list):
+            raise ValidationError({"config": "Template config.sections must be a list."})
+
+        normalized_sections: List[Dict[str, Any]] = []
+
+        for section_index, section in enumerate(raw_sections):
+            if not isinstance(section, dict):
+                raise ValidationError({"config": f"sections[{section_index}] must be an object."})
+
+            section_type = str(section.get("type", "")).strip().upper()
+            if not section_type:
+                raise ValidationError({"config": f"sections[{section_index}].type is required."})
+
+            section_name = str(section.get("name") or section_type.replace("_", " ").title()).strip()
+            if not section_name:
+                raise ValidationError({"config": f"sections[{section_index}].name cannot be empty."})
+
+            raw_blocks = section.get("blocks", [])
+            if not isinstance(raw_blocks, list):
+                raise ValidationError({"config": f"sections[{section_index}].blocks must be a list."})
+
+            normalized_blocks: List[Dict[str, Any]] = []
+
+            for block_index, block in enumerate(raw_blocks):
+                if not isinstance(block, dict):
+                    raise ValidationError(
+                        {"config": f"sections[{section_index}].blocks[{block_index}] must be an object."}
+                    )
+
+                block_type = str(block.get("type", "")).strip().upper()
+                if not block_type:
+                    raise ValidationError(
+                        {"config": f"sections[{section_index}].blocks[{block_index}].type is required."}
+                    )
+
+                allowed_block_types = {choice for choice, _ in Block.BlockType.choices}
+                if block_type not in allowed_block_types:
+                    raise ValidationError(
+                        {
+                            "config": (
+                                f"sections[{section_index}].blocks[{block_index}].type has invalid value '{block_type}'."
+                            )
+                        }
+                    )
+
+                raw_elements = block.get("elements", [])
+                if not isinstance(raw_elements, list):
+                    raise ValidationError(
+                        {"config": f"sections[{section_index}].blocks[{block_index}].elements must be a list."}
+                    )
+
+                normalized_elements: List[Dict[str, Any]] = []
+                unique_pairs: set[tuple[str, str]] = set()
+
+                for element_index, element in enumerate(raw_elements):
+                    if not isinstance(element, dict):
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}] must be an object."
+                                )
+                            }
+                        )
+
+                    label = str(element.get("label", "")).strip()
+                    data_source = str(element.get("data_source", "")).strip().upper()
+                    field = str(element.get("field", "")).strip()
+
+                    if not label:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].label is required."
+                                )
+                            }
+                        )
+                    if not data_source:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].data_source is required."
+                                )
+                            }
+                        )
+                    if not field:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].field is required."
+                                )
+                            }
+                        )
+
+                    allowed_sources = {choice for choice, _ in Element.DataSource.choices}
+                    allowed_fields = {choice for choice, _ in Element.DataField.choices}
+                    if data_source not in allowed_sources:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].data_source is invalid."
+                                )
+                            }
+                        )
+                    if field not in allowed_fields:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].field is invalid."
+                                )
+                            }
+                        )
+
+                    allowed_mapping = _ALLOWED_ELEMENT_FIELDS_BY_SOURCE.get(data_source, set())
+                    if field not in allowed_mapping:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}] has an invalid data_source/field mapping."
+                                )
+                            }
+                        )
+
+                    pair = (data_source, field)
+                    if pair in unique_pairs:
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}] contains duplicate data_source/field pairs."
+                                )
+                            }
+                        )
+                    unique_pairs.add(pair)
+
+                    element_config = element.get("config", {})
+                    if element_config is None:
+                        element_config = {}
+                    if not isinstance(element_config, dict):
+                        raise ValidationError(
+                            {
+                                "config": (
+                                    f"sections[{section_index}].blocks[{block_index}].elements[{element_index}].config must be an object."
+                                )
+                            }
+                        )
+
+                    normalized_elements.append(
+                        {
+                            "label": label,
+                            "data_source": data_source,
+                            "field": field,
+                            "config": element_config,
+                            "is_visible": bool(element.get("is_visible", True)),
+                            "_order": self._coerce_order(
+                                element.get("order"),
+                                default=element_index,
+                            ),
+                            "_index": element_index,
+                        }
+                    )
+
+                normalized_elements = sorted(
+                    normalized_elements,
+                    key=lambda item: (item["_order"], item["_index"]),
+                )
+                for normalized_index, item in enumerate(normalized_elements, start=1):
+                    item["order"] = normalized_index
+                    item.pop("_order", None)
+                    item.pop("_index", None)
+
+                block_config = block.get("config", {})
+                if block_config is None:
+                    block_config = {}
+                if not isinstance(block_config, dict):
+                    raise ValidationError(
+                        {"config": f"sections[{section_index}].blocks[{block_index}].config must be an object."}
+                    )
+
+                normalized_blocks.append(
+                    {
+                        "type": block_type,
+                        "config": block_config,
+                        "is_visible": bool(block.get("is_visible", True)),
+                        "elements": normalized_elements,
+                        "_order": self._coerce_order(block.get("order"), default=block_index),
+                        "_index": block_index,
+                    }
+                )
+
+            normalized_blocks = sorted(
+                normalized_blocks,
+                key=lambda item: (item["_order"], item["_index"]),
+            )
+            for normalized_index, item in enumerate(normalized_blocks, start=1):
+                item["order"] = normalized_index
+                item.pop("_order", None)
+                item.pop("_index", None)
+
+            section_config = section.get("config", {})
+            if section_config is None:
+                section_config = {}
+            if not isinstance(section_config, dict):
+                raise ValidationError({"config": f"sections[{section_index}].config must be an object."})
+
+            normalized_sections.append(
+                {
+                    "type": section_type,
+                    "name": section_name,
+                    "config": section_config,
+                    "is_visible": bool(section.get("is_visible", True)),
+                    "blocks": normalized_blocks,
+                    "_order": self._coerce_order(section.get("order"), default=section_index),
+                    "_index": section_index,
+                }
+            )
+
+        normalized_sections = sorted(
+            normalized_sections,
+            key=lambda item: (item["_order"], item["_index"]),
+        )
+        for normalized_index, item in enumerate(normalized_sections, start=1):
+            item["order"] = normalized_index
+            item.pop("_order", None)
+            item.pop("_index", None)
+
+        return normalized_sections
+
+    @transaction.atomic
+    def apply_template(self, *, portfolio_id: int, template_id: int, user) -> Dict[str, int]:
+        portfolio = (
+            Portfolio.objects.select_for_update()
+            .filter(id=portfolio_id, user_id=user.id)
+            .first()
+        )
+        if portfolio is None:
+            raise NotFound("Portfolio not found.")
+
+        template = self.get_template(template_id)
+        sections_config = self._normalize_template_config(template.config)
+
+        Section.objects.filter(portfolio=portfolio).delete()
+
+        sections_created = 0
+        blocks_created = 0
+        elements_created = 0
+
+        for section_payload in sections_config:
+            section_config = dict(section_payload.get("config") or {})
+            section_config.setdefault("type", section_payload["type"])
+
+            section = Section.objects.create(
+                portfolio=portfolio,
+                name=section_payload["name"],
+                order=section_payload["order"],
+                is_visible=bool(section_payload.get("is_visible", True)),
+                config=section_config,
+            )
+            sections_created += 1
+
+            for block_payload in section_payload.get("blocks", []):
+                block = Block.objects.create(
+                    section=section,
+                    type=block_payload["type"],
+                    order=block_payload["order"],
+                    is_visible=bool(block_payload.get("is_visible", True)),
+                    config=dict(block_payload.get("config") or {}),
+                )
+                blocks_created += 1
+
+                for element_payload in block_payload.get("elements", []):
+                    Element.objects.create(
+                        block=block,
+                        label=element_payload["label"],
+                        data_source=element_payload["data_source"],
+                        field=element_payload["field"],
+                        order=element_payload["order"],
+                        is_visible=bool(element_payload.get("is_visible", True)),
+                        config=dict(element_payload.get("config") or {}),
+                    )
+                    elements_created += 1
+
+        return {
+            "portfolio_id": portfolio.id,
+            "template_id": template.id,
+            "sections_created": sections_created,
+            "blocks_created": blocks_created,
+            "elements_created": elements_created,
+        }
 
 
 class PortfolioService:
@@ -361,22 +783,8 @@ class PortfolioService:
             raise ValidationError({"theme": "Theme not found."})
 
     def _assert_publishable(self, portfolio: Portfolio) -> None:
-        if portfolio.pk is None:
-            raise ValidationError(
-                {
-                    "is_published": "Portfolio must be saved and have at least one section and at least one block before publishing."
-                }
-            )
-
-        has_section = Section.objects.filter(portfolio_id=portfolio.pk).exists()
-        has_block = Block.objects.filter(section__portfolio_id=portfolio.pk).exists()
-
-        if not has_section or not has_block:
-            raise ValidationError(
-                {
-                    "is_published": "Portfolio must have at least one section and at least one block before publishing."
-                }
-            )
+        # Publishing is allowed regardless of layout completeness.
+        return
 
     def _reject_unknown_fields(self, payload: Any) -> None:
         keys = set(getattr(payload, "keys", lambda: [])())
@@ -797,17 +1205,8 @@ class SectionService:
             Section.objects.bulk_update(changed, ["order"])
 
     def _maybe_unpublish_if_invalid(self, *, portfolio: Portfolio) -> None:
-        if not portfolio.is_published:
-            return
-
-        has_section = Section.objects.filter(portfolio_id=portfolio.pk).exists()
-        has_block = Block.objects.filter(section__portfolio_id=portfolio.pk).exists()
-
-        if has_section and has_block:
-            return
-
-        portfolio.is_published = False
-        portfolio.save(update_fields=["is_published", "updated_at"])
+        # Keep publish status stable even if layout changes.
+        return
 
     def list(self, *, portfolio_id: int, user) -> QuerySet[Section]:
         portfolio = self._resolve_portfolio(portfolio_id=portfolio_id, user=user)
@@ -1099,17 +1498,8 @@ class BlockService:
             Block.objects.bulk_update(changed, ["order"])
 
     def _maybe_unpublish_if_invalid(self, *, portfolio: Portfolio) -> None:
-        if not portfolio.is_published:
-            return
-
-        has_section = Section.objects.filter(portfolio_id=portfolio.pk).exists()
-        has_block = Block.objects.filter(section__portfolio_id=portfolio.pk).exists()
-
-        if has_section and has_block:
-            return
-
-        portfolio.is_published = False
-        portfolio.save(update_fields=["is_published", "updated_at"])
+        # Keep publish status stable even if layout changes.
+        return
 
     def _validate_grid_data_source_consistency(self, *, block: Block) -> None:
         if block.type != Block.BlockType.GRID:

@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from PIL import Image
 
-from .models import Block, Element, Portfolio, Project, Section
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
 
 
 class SectionCRUDTests(APITestCase):
@@ -623,6 +623,53 @@ class PortfolioRenderTests(APITestCase):
 		res = self.client.get(url)
 		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
+	def test_render_payload_includes_theme_sections_and_data(self):
+		theme = Theme.objects.create(
+			name="Render Theme",
+			config={"primary_color": "#111827", "text_color": "#f9fafb"},
+			is_active=True,
+			is_default=False,
+		)
+		self.portfolio.theme = theme
+		self.portfolio.save(update_fields=["theme"])
+
+		Project.objects.create(
+			portfolio=self.portfolio,
+			title="Project A",
+			description="Description",
+			order=1,
+			is_visible=True,
+		)
+		Skill.objects.create(
+			portfolio=self.portfolio,
+			name="Python",
+			level=5,
+			order=1,
+			is_visible=True,
+		)
+		Experience.objects.create(
+			portfolio=self.portfolio,
+			company="Acme",
+			role="Engineer",
+			timeline="2021-2024",
+			order=1,
+			is_visible=True,
+		)
+
+		self.client.force_authenticate(user=self.owner)
+		url = reverse("portfolio-render", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+		payload = res.json()
+		self.assertIn("theme", payload)
+		self.assertIn("sections", payload)
+		self.assertIn("data", payload)
+		self.assertEqual(payload["theme"]["name"], "Render Theme")
+		self.assertEqual(len(payload["data"]["projects"]), 1)
+		self.assertEqual(len(payload["data"]["skills"]), 1)
+		self.assertEqual(len(payload["data"]["experience"]), 1)
+
 
 class PortfolioResumeUploadTests(APITestCase):
 	def setUp(self):
@@ -701,3 +748,218 @@ class ProjectFileUploadTests(APITestCase):
 
 		project = Project.objects.get(id=project_id)
 		self.assertTrue(bool(project.image))
+
+
+class PortfolioTemplateApiTests(APITestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.owner = User.objects.create_user(username="template_owner", password="password123")
+		self.other = User.objects.create_user(username="template_other", password="password123")
+
+		self.portfolio = Portfolio.objects.create(
+			user=self.owner,
+			title="Template Portfolio",
+			slug="template-portfolio",
+			description="",
+			theme=None,
+			is_published=False,
+		)
+
+		old_section = Section.objects.create(
+			portfolio=self.portfolio,
+			name="Old Section",
+			order=1,
+			is_visible=True,
+			config={},
+		)
+		old_block = Block.objects.create(
+			section=old_section,
+			type="LIST",
+			order=1,
+			is_visible=True,
+			config={},
+		)
+		Element.objects.create(
+			block=old_block,
+			label="Old Title",
+			data_source="PROJECT",
+			field="title",
+			order=1,
+			is_visible=True,
+			config={},
+		)
+
+		self.template = PortfolioTemplate.objects.create(
+			name="Starter Template",
+			description="Quick starter",
+			is_active=True,
+			config={
+				"sections": [
+					{
+						"type": "HERO",
+						"order": 0,
+						"blocks": [
+							{
+								"type": "KEY_VALUE",
+								"order": 0,
+								"elements": [
+									{
+										"label": "Title",
+										"data_source": "PORTFOLIO",
+										"field": "title",
+										"order": 0,
+									}
+								],
+							}
+						],
+					},
+					{
+						"type": "PROJECTS",
+						"order": 1,
+						"blocks": [
+							{
+								"type": "GRID",
+								"order": 0,
+								"elements": [
+									{
+										"label": "Project Title",
+										"data_source": "PROJECT",
+										"field": "title",
+										"order": 0,
+									},
+									{
+										"label": "Project Description",
+										"data_source": "PROJECT",
+										"field": "description",
+										"order": 1,
+									},
+								],
+							}
+						],
+					},
+				],
+			},
+		)
+
+		PortfolioTemplate.objects.create(
+			name="Inactive Template",
+			description="Should not be listed",
+			is_active=False,
+			config={"sections": []},
+		)
+
+	def test_list_templates_returns_only_active(self):
+		self.client.force_authenticate(user=self.owner)
+		url = reverse("template-list")
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+		items = res.json()
+		self.assertEqual(len(items), 1)
+		self.assertEqual(items[0]["name"], "Starter Template")
+
+	def test_apply_template_replaces_existing_layout(self):
+		self.client.force_authenticate(user=self.owner)
+		url = reverse("portfolio-apply-template", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.post(url, data={"template_id": self.template.id}, format="json")
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+		result = res.json()
+		self.assertEqual(result["sections_created"], 2)
+		self.assertEqual(result["blocks_created"], 2)
+		self.assertEqual(result["elements_created"], 3)
+
+		sections = list(Section.objects.filter(portfolio=self.portfolio).order_by("order", "id"))
+		self.assertEqual(len(sections), 2)
+		self.assertEqual([s.order for s in sections], [1, 2])
+		self.assertEqual(sections[0].config.get("type"), "HERO")
+		self.assertEqual(sections[1].config.get("type"), "PROJECTS")
+
+		blocks = list(Block.objects.filter(section__portfolio=self.portfolio).order_by("section_id", "order", "id"))
+		self.assertEqual(len(blocks), 2)
+		self.assertEqual([b.order for b in blocks], [1, 1])
+
+		elements = list(Element.objects.filter(block__section__portfolio=self.portfolio).order_by("block_id", "order", "id"))
+		self.assertEqual(len(elements), 3)
+		self.assertEqual([e.order for e in elements], [1, 1, 2])
+
+	def test_apply_template_requires_owner(self):
+		self.client.force_authenticate(user=self.other)
+		url = reverse("portfolio-apply-template", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.post(url, data={"template_id": self.template.id}, format="json")
+		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class PortfolioOverviewApiTests(APITestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.owner = User.objects.create_user(username="overview_owner", password="password123")
+		self.other = User.objects.create_user(username="overview_other", password="password123")
+
+		theme = Theme.objects.create(
+			name="Overview Theme",
+			config={"primary_color": "#111827"},
+			is_active=True,
+			is_default=False,
+		)
+
+		self.portfolio = Portfolio.objects.create(
+			user=self.owner,
+			title="Overview Portfolio",
+			slug="overview-portfolio",
+			description="Overview",
+			theme=theme,
+			is_published=False,
+		)
+
+		Section.objects.create(
+			portfolio=self.portfolio,
+			name="Layout Section",
+			order=1,
+			is_visible=True,
+			config={},
+		)
+		Project.objects.create(
+			portfolio=self.portfolio,
+			title="Overview Project",
+			description="Desc",
+			order=1,
+			is_visible=True,
+		)
+		Skill.objects.create(
+			portfolio=self.portfolio,
+			name="Django",
+			level=5,
+			order=1,
+			is_visible=True,
+		)
+		Experience.objects.create(
+			portfolio=self.portfolio,
+			company="Org",
+			role="Lead",
+			timeline="2020-2025",
+			order=1,
+			is_visible=True,
+		)
+
+	def test_overview_returns_domain_data_without_layout(self):
+		self.client.force_authenticate(user=self.owner)
+		url = reverse("portfolio-overview", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+		payload = res.json()
+		self.assertIn("portfolio", payload)
+		self.assertIn("projects", payload)
+		self.assertIn("skills", payload)
+		self.assertIn("experience", payload)
+		self.assertNotIn("sections", payload)
+		self.assertEqual(len(payload["projects"]), 1)
+		self.assertEqual(len(payload["skills"]), 1)
+		self.assertEqual(len(payload["experience"]), 1)
+
+	def test_overview_requires_owner(self):
+		self.client.force_authenticate(user=self.other)
+		url = reverse("portfolio-overview", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)

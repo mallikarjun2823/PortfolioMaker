@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .serializers import (
+    ApplyTemplateSerializer,
     AuthResponseSerializer,
     BlockCreateSerializer,
     BlockPatchSerializer,
@@ -22,8 +23,10 @@ from .serializers import (
     ExperienceResponseSerializer,
     LoginSerializer,
     PortfolioCreateSerializer,
+    PortfolioOverviewSerializer,
     PortfolioPatchSerializer,
     PortfolioPutSerializer,
+    PortfolioTemplateResponseSerializer,
     PortfolioResponseSerializer,
     ProjectCreateSerializer,
     ProjectPatchSerializer,
@@ -45,8 +48,10 @@ from .services import (
     BlockService,
     ElementService,
     ExperienceService,
+    PortfolioOverviewService,
     PortfolioRenderService,
     PortfolioService,
+    PortfolioTemplateService,
     ProjectService,
     SectionService,
     SkillService,
@@ -111,6 +116,16 @@ class ThemeListAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class PortfolioTemplateListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = PortfolioTemplateService()
+
+    def get(self, request):
+        templates = self.service.list_templates()
+        serializer = PortfolioTemplateResponseSerializer(templates, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class PortfolioAPIView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -163,6 +178,32 @@ class PortfolioDetailAPIView(APIView):
         portfolio = self._get_object(request, pk)
         self.service.delete(user=request.user, instance=portfolio)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PortfolioOverviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = PortfolioOverviewService()
+
+    def get(self, request, portfolio_id: int):
+        payload = self.service.get_overview(portfolio_id=portfolio_id, user=request.user)
+        serializer = PortfolioOverviewSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ApplyPortfolioTemplateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = PortfolioTemplateService()
+
+    def post(self, request, portfolio_id: int):
+        serializer = ApplyTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        result = self.service.apply_template(
+            portfolio_id=portfolio_id,
+            template_id=serializer.validated_data["template_id"],
+            user=request.user,
+        )
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ProjectListCreateAPIView(APIView):

@@ -55,6 +55,22 @@ class Theme(models.Model):
         return self.name
 
 
+class PortfolioTemplate(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    config = models.JSONField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["is_active", "created_at"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 # =========================
 # PORTFOLIO (AGGREGATE ROOT)
 # =========================

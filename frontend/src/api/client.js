@@ -100,6 +100,7 @@ export async function apiRequest(path, { method = 'GET', token, body, headers } 
 const listThemePresets = (token) => apiRequest('/themes/', { token })
 const getPortfolioRender = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token })
 const getPublicPortfolioRenderBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/render/`)
+const getPortfolioOverview = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/overview/`, { token })
 
 export const api = {
   // auth
@@ -113,6 +114,7 @@ export const api = {
   listPortfolios: (token) => apiRequest('/portfolios/', { token }),
   createPortfolio: (token, payload) => apiRequest('/portfolios/', { method: 'POST', token, body: payload }),
   getPortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { token }),
+  getPortfolioOverview,
   updatePortfolio: (token, id, payload, { method = 'PATCH' } = {}) =>
     apiRequest(`/portfolios/${id}/`, { method, token, body: payload }),
   deletePortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { method: 'DELETE', token }),

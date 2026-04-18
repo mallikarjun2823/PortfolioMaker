@@ -13,7 +13,6 @@ export default function PortfolioOverviewPage() {
   const [projects, setProjects] = useState([])
   const [skills, setSkills] = useState([])
   const [experiences, setExperiences] = useState([])
-  const [sections, setSections] = useState([])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -22,19 +21,16 @@ export default function PortfolioOverviewPage() {
     setLoading(true)
     setError(null)
     try {
-      const [p, pr, sk, ex, se] = await Promise.all([
-        api.getPortfolio(token, portfolioId),
-        api.listProjects(token, portfolioId),
-        api.listSkills(token, portfolioId),
-        api.listExperiences(token, portfolioId),
-        api.listSections(token, portfolioId)
-      ])
+      const overview = await api.getPortfolioOverview(token, portfolioId)
 
-      setPortfolio(p || null)
-      setProjects(Array.isArray(pr) ? pr : [])
-      setSkills(Array.isArray(sk) ? sk : [])
-      setExperiences(Array.isArray(ex) ? ex : [])
-      setSections(Array.isArray(se) ? se : [])
+      setPortfolio(overview?.portfolio || null)
+      setProjects(Array.isArray(overview?.projects) ? overview.projects : [])
+      setSkills(Array.isArray(overview?.skills) ? overview.skills : [])
+
+      const experienceList = Array.isArray(overview?.experience)
+        ? overview.experience
+        : (Array.isArray(overview?.experiences) ? overview.experiences : [])
+      setExperiences(experienceList)
     } catch (err) {
       setError(err)
     } finally {
@@ -46,8 +42,6 @@ export default function PortfolioOverviewPage() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId])
-
-  const visibleSections = sections.filter((s) => s.is_visible)
 
   return (
     <div>
@@ -70,31 +64,6 @@ export default function PortfolioOverviewPage() {
         <EmptyState title="Portfolio not found" subtitle="This portfolio might not exist or you might not have access." />
       ) : (
         <div className="layoutGrid2">
-          <Card>
-            <CardTitle>Sections</CardTitle>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <Pill>{sections.length} total</Pill>
-              <Pill>{visibleSections.length} visible</Pill>
-            </div>
-            <div className="divider" />
-            {sections.length === 0 ? (
-              <div className="subtle">No sections yet.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {sections.slice(0, 6).map((s) => (
-                  <div key={s.id} className="kv">
-                    <div className="kvKey">#{s.order}</div>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>{s.name}</div>
-                      <div className="subtle">{s.is_visible ? 'Visible' : 'Hidden'}</div>
-                    </div>
-                  </div>
-                ))}
-                {sections.length > 6 ? <div className="subtle">+{sections.length - 6} more</div> : null}
-              </div>
-            )}
-          </Card>
-
           <Card>
             <CardTitle>Projects</CardTitle>
             <div className="row" style={{ justifyContent: 'space-between' }}>

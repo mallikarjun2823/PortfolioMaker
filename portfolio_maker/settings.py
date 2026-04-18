@@ -64,7 +64,7 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DJANGO_DEBUG", True)
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["*"])
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS)
 
 
 # Application definition
@@ -102,7 +102,9 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
     "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG
 )
 SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", not DEBUG)
-CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS", DEFAULT_CORS_ALLOWED_ORIGINS
+)
 
 if env_bool("DJANGO_USE_X_FORWARDED_PROTO", not DEBUG):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -134,7 +136,7 @@ import dj_database_url
 
 DATABASES = {
     "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
         ssl_require=not DEBUG,
     )
@@ -242,12 +244,3 @@ LOGGING = {
         },
     },
 }
-
-
-CORS_ALLOWED_ORIGINS = [
-    "https://portfolio-maker-orpin.vercel.app",
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    "https://portfolio-maker-orpin.vercel.app",
-]

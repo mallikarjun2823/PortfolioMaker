@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Block, Element, Experience, Portfolio, Project, Section, Skill, Theme
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -26,6 +26,24 @@ class ThemeResponseSerializer(serializers.ModelSerializer):
         model = Theme
         fields = ["id", "name", "config", "is_active", "is_default"]
         read_only_fields = fields
+
+
+class PortfolioTemplateResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PortfolioTemplate
+        fields = ["id", "name", "description", "config", "is_active", "created_at"]
+        read_only_fields = fields
+
+
+class ApplyTemplateSerializer(serializers.Serializer):
+    template_id = serializers.IntegerField(min_value=1)
+
+
+class PortfolioOverviewSerializer(serializers.Serializer):
+    portfolio = serializers.DictField(read_only=True)
+    projects = serializers.ListField(child=serializers.DictField(), read_only=True)
+    skills = serializers.ListField(child=serializers.DictField(), read_only=True)
+    experience = serializers.ListField(child=serializers.DictField(), read_only=True)
 
 
 class PortfolioResponseSerializer(serializers.ModelSerializer):

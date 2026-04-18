@@ -6,8 +6,19 @@ urlpatterns = [
     path("auth/register/", views.RegisterAPIView.as_view(), name="auth-register"),
     path("auth/login/", views.LoginAPIView.as_view(), name="auth-login"),
     path("themes/", views.ThemeListAPIView.as_view(), name="theme-list"),
+    path("templates/", views.PortfolioTemplateListAPIView.as_view(), name="template-list"),
     path("portfolios/", views.PortfolioAPIView.as_view(), name="portfolio-list"),
     path("portfolios/<int:pk>/", views.PortfolioDetailAPIView.as_view(), name="portfolio-detail"),
+    path(
+        "portfolios/<int:portfolio_id>/overview/",
+        views.PortfolioOverviewAPIView.as_view(),
+        name="portfolio-overview",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/apply-template/",
+        views.ApplyPortfolioTemplateAPIView.as_view(),
+        name="portfolio-apply-template",
+    ),
     path(
         "portfolios/<int:portfolio_id>/render/",
         views.PortfolioRenderAPIView.as_view(),
