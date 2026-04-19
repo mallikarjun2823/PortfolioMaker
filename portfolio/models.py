@@ -327,3 +327,29 @@ class Experience(models.Model):
 
     def __str__(self):
         return f"{self.company} - {self.role}"
+
+
+class ResumeUpload(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING"
+        PROCESSING = "PROCESSING"
+        COMPLETED = "COMPLETED"
+        FAILED = "FAILED"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="resume_uploads")
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="resume_uploads")
+    file = models.FileField(upload_to="resumes/")
+    status = models.CharField(max_length=20, default=Status.PENDING, choices=Status.choices)
+    parsed_data = models.JSONField(null=True, blank=True)
+    error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["portfolio", "created_at"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"ResumeUpload({self.id}) {self.status}"

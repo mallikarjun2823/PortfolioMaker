@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from rest_framework import serializers
 
-from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, ResumeUpload, Section, Skill, Theme
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -678,4 +680,26 @@ class ElementPatchSerializer(_BaseElementWriteSerializer):
             "is_visible": {"required": False},
             "config": {"required": False},
         }
+
+
+class ResumeUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(required=True)
+
+    def validate_file(self, value):
+        name = str(getattr(value, "name", "") or "").strip()
+        ext = Path(name).suffix.lower()
+        if ext not in {".pdf", ".docx", ".txt"}:
+            raise serializers.ValidationError("Unsupported file type. Use PDF, DOCX, or TXT.")
+
+        max_size_bytes = 10 * 1024 * 1024
+        if getattr(value, "size", 0) > max_size_bytes:
+            raise serializers.ValidationError("File size must be <= 10MB.")
+        return value
+
+
+class ResumeUploadStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResumeUpload
+        fields = ["id", "user", "portfolio", "file", "status", "parsed_data", "error", "created_at"]
+        read_only_fields = fields
 

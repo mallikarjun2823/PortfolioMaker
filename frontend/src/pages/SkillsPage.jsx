@@ -12,8 +12,11 @@ export default function SkillsPage() {
   const { portfolioId } = useParams()
 
   const [items, setItems] = useState([])
+  const [draftItems, setDraftItems] = useState([])
+  const [draftUploadId, setDraftUploadId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [applyingDraft, setApplyingDraft] = useState(false)
 
   const [creating, setCreating] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -31,11 +34,69 @@ export default function SkillsPage() {
     setError(null)
     try {
       const res = await api.listSkills(token, portfolioId)
-      setItems(Array.isArray(res) ? res : [])
+      const skillItems = Array.isArray(res) ? res : []
+      setItems(skillItems)
+
+      if (skillItems.length > 0) {
+        setDraftItems([])
+        setDraftUploadId(null)
+      } else {
+        const draft = await api.getPortfolioResumeDraft(token, portfolioId)
+        const parsed = draft?.upload?.parsed_data
+        const skills = Array.isArray(parsed?.skills) ? parsed.skills : []
+        const seen = new Set()
+        const mapped = skills
+          .map((item, idx) => {
+            const name = typeof item === 'object' && item !== null
+              ? String(item.name || '').trim()
+              : String(item || '').trim()
+            if (!name) return null
+
+            const key = name.toLowerCase()
+            if (seen.has(key)) return null
+            seen.add(key)
+
+            let level = 3
+            if (typeof item === 'object' && item !== null) {
+              const rawLevel = Number(item.level)
+              if (Number.isFinite(rawLevel)) level = Math.max(1, Math.min(5, rawLevel))
+            }
+
+            return {
+              id: `draft-skill-${idx + 1}`,
+              name,
+              level,
+              order: seen.size,
+              is_visible: true
+            }
+          })
+          .filter(Boolean)
+
+        setDraftItems(mapped)
+        setDraftUploadId(draft?.upload_id || null)
+      }
     } catch (err) {
       setError(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function onApplyDraft() {
+    if (!draftUploadId) return
+
+    setApplyingDraft(true)
+    setError(null)
+    try {
+      const result = await api.applyPortfolioResumeDraft(token, portfolioId, draftUploadId)
+      const summary = `${result?.projects_created || 0} projects, ${result?.experiences_created || 0} experiences, ${result?.skills_created || 0} skills`
+      toast.success(`Imported data saved (${summary})`)
+      await load()
+    } catch (err) {
+      setError(err)
+      toast.error(toErrorMessage(err, 'Could not save imported data'))
+    } finally {
+      setApplyingDraft(false)
     }
   }
 
@@ -133,6 +194,11 @@ export default function SkillsPage() {
         right={
           <div className="row">
             <Button onClick={() => setCreateModalOpen(true)}>+ Add New Skill</Button>
+            {draftUploadId && draftItems.length > 0 ? (
+              <Button onClick={onApplyDraft} disabled={applyingDraft}>
+                {applyingDraft ? 'Saving…' : 'Save Imported Data'}
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
           </div>
         }
@@ -142,6 +208,21 @@ export default function SkillsPage() {
 
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
+      ) : items.length === 0 && draftItems.length > 0 ? (
+        <div className="grid">
+          <Card>
+            <div className="subtle">
+              Resume draft found. These skills are preview-only and not saved yet.
+              Click "Save Imported Data" to persist them.
+            </div>
+          </Card>
+          {draftItems.map((s) => (
+            <Card key={s.id}>
+              <div style={{ fontWeight: 800 }}>{s.name}</div>
+              <div className="subtle">Level {s.level} • Order #{s.order} • Draft Preview</div>
+            </Card>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <EmptyState title="No skills yet" subtitle="Click + Add New Skill." />
       ) : (

@@ -3,10 +3,12 @@ import { Link, useParams } from 'react-router-dom'
 
 import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
-import { Card, CardTitle, EmptyState, ErrorBanner, PageHeader, Pill } from '../components/Ui.jsx'
+import { toErrorMessage, useToast } from '../services/toast.jsx'
+import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader, Pill } from '../components/Ui.jsx'
 
 export default function PortfolioOverviewPage() {
   const { token } = useAuth()
+  const toast = useToast()
   const { portfolioId } = useParams()
 
   const [portfolio, setPortfolio] = useState(null)
@@ -16,6 +18,10 @@ export default function PortfolioOverviewPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [lastImportStatus, setLastImportStatus] = useState('')
 
   async function load() {
     setLoading(true)
@@ -43,6 +49,52 @@ export default function PortfolioOverviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId])
 
+  async function handleImportResume(e) {
+    e.preventDefault()
+    if (!importFile) return
+
+    setImporting(true)
+    setError(null)
+    try {
+      const payload = new FormData()
+      payload.append('file', importFile)
+
+      const res = await api.importPortfolioFromResume(token, portfolioId, payload)
+      const uploadId = res?.upload_id
+
+      let effectiveStatus = String(res?.status || '').toUpperCase()
+      let statusError = ''
+      if (uploadId) {
+        try {
+          const statusRes = await api.getResumeUploadStatus(token, uploadId)
+          effectiveStatus = String(statusRes?.status || effectiveStatus || '').toUpperCase()
+          statusError = String(statusRes?.error || '').trim()
+        } catch {
+          // Ignore status polling failures and fallback to import response.
+        }
+      }
+
+      setLastImportStatus(effectiveStatus)
+
+      if (effectiveStatus === 'COMPLETED') {
+        toast.success('Resume parsed. Tabs are now auto-populated as draft; click Save Imported Data in tabs to persist.')
+      } else if (effectiveStatus === 'FAILED') {
+        toast.error(statusError || 'Resume import failed. Please check the file and try again.')
+      } else {
+        toast.info('Resume import submitted. Generating draft data...')
+      }
+
+      setImportFile(null)
+      setImportOpen(false)
+      await load()
+    } catch (err) {
+      setError(err)
+      toast.error(toErrorMessage(err, 'Could not import portfolio data from resume'))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -50,6 +102,7 @@ export default function PortfolioOverviewPage() {
         subtitle={portfolio ? (portfolio.description || 'No description') : 'Overview'}
         right={
           <div className="row">
+            <Button variant="ghost" onClick={() => setImportOpen(true)}>Import Resume</Button>
             <Link className="btn btnGhost" to={`/app/portfolios/${portfolioId}/build`}>Build</Link>
             <Link className="btn" to={`/app/portfolios/${portfolioId}/projects`}>Edit Data</Link>
           </div>
@@ -57,6 +110,12 @@ export default function PortfolioOverviewPage() {
       />
 
       <ErrorBanner error={error} />
+
+      {lastImportStatus ? (
+        <div className="subtle" style={{ marginBottom: 12 }}>
+          Last resume import status: {lastImportStatus}
+        </div>
+      ) : null}
 
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
@@ -128,6 +187,40 @@ export default function PortfolioOverviewPage() {
           </Card>
         </div>
       )}
+
+      <Modal
+        open={importOpen}
+        title="Import Portfolio Using Resume"
+        subtitle="Upload a resume to auto-generate projects, skills, and experiences."
+        onClose={() => {
+          if (importing) return
+          setImportOpen(false)
+        }}
+      >
+        <form onSubmit={handleImportResume}>
+          <Field label="Resume File" hint="Supported formats: PDF, DOCX, TXT (max 10MB)">
+            <Input
+              type="file"
+              accept=".pdf,.docx,.txt"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+            />
+          </Field>
+
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => setImportOpen(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={importing || !importFile}>
+              {importing ? 'Importing…' : 'Import Resume'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

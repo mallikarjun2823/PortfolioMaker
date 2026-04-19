@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from datetime import date, datetime, time
 from typing import Any, Dict, Iterable, List, Sequence
@@ -17,7 +19,8 @@ from django.utils.text import slugify
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, ResumeUpload, Section, Skill, Theme
+from .ollama_client import OllamaClient
 
 
 service_logger = logging.getLogger("portfolio.service")
@@ -916,6 +919,343 @@ class PortfolioService:
         )
         self._ensure_owner(user=user, portfolio=instance)
         instance.delete()
+
+
+class ResumeImportService:
+    PROMPT_TEMPLATE = (
+        "Extract structured portfolio data from this resume. "
+        "Return strict JSON only with keys: projects, experience, education, skills. "
+        "projects must be a list of objects with keys title, description, technologies. "
+        "experience must be a list of objects with keys company, role, duration, description. "
+        "education must be a list of objects with keys institution, degree, duration. "
+        "skills must be a list of strings. "
+        "Do not add markdown fences.\n\n"
+        "Resume Text:\n{resume_text}"
+    )
+
+    def __init__(self) -> None:
+        self.ollama_client = OllamaClient()
+
+    def import_resume(self, *, portfolio_id: int, user, file) -> ResumeUpload:
+        portfolio = PortfolioService().retrieve(user=user, portfolio_id=portfolio_id)
+        upload = ResumeUpload.objects.create(
+            user=user,
+            portfolio=portfolio,
+            file=file,
+            status=ResumeUpload.Status.PENDING,
+        )
+        return self.process_resume(upload)
+
+    def get_latest_draft(self, *, portfolio_id: int, user) -> ResumeUpload | None:
+        portfolio = PortfolioService().retrieve(user=user, portfolio_id=portfolio_id)
+        uploads = ResumeUpload.objects.filter(
+            user_id=user.id,
+            portfolio_id=portfolio.id,
+            status=ResumeUpload.Status.COMPLETED,
+        ).order_by("-created_at", "-id")
+
+        for upload in uploads:
+            parsed = upload.parsed_data
+            if isinstance(parsed, dict) and any(isinstance(v, list) and v for v in parsed.values()):
+                return upload
+        return None
+
+    @transaction.atomic
+    def apply_upload(self, *, portfolio_id: int, upload_id: int, user) -> Dict[str, Any]:
+        upload = self.get_upload(upload_id=upload_id, user=user)
+        if upload.portfolio_id != int(portfolio_id):
+            raise NotFound("Resume upload not found.")
+
+        if upload.status != ResumeUpload.Status.COMPLETED:
+            raise ValidationError({"detail": "Resume upload is not ready to apply."})
+
+        normalized = self._normalize_parsed_data(upload.parsed_data if isinstance(upload.parsed_data, dict) else None)
+        if not any(normalized.values()):
+            raise ValidationError({"detail": "No parsed draft data found for this upload."})
+
+        created_counts = self._map_to_domain(parsed_data=normalized, portfolio=upload.portfolio, user=upload.user)
+        upload.parsed_data = None
+        upload.error = None
+        upload.save(update_fields=["parsed_data", "error"])
+
+        return {
+            "upload_id": upload.id,
+            "status": upload.status,
+            **created_counts,
+        }
+
+    def get_upload(self, *, upload_id: int, user) -> ResumeUpload:
+        upload = ResumeUpload.objects.filter(id=upload_id, user_id=user.id).first()
+        if upload is None:
+            raise NotFound("Resume upload not found.")
+        return upload
+
+    def _flatten_validation_detail(self, detail: Any) -> str:
+        if detail is None:
+            return ""
+
+        if isinstance(detail, list):
+            parts = [self._flatten_validation_detail(item) for item in detail]
+            parts = [part for part in parts if part]
+            return "; ".join(parts)
+
+        if isinstance(detail, dict):
+            parts: List[str] = []
+            for key, value in detail.items():
+                item_text = self._flatten_validation_detail(value)
+                if item_text:
+                    parts.append(item_text if key == "detail" else f"{key}: {item_text}")
+            return "; ".join(parts)
+
+        return str(detail).strip()
+
+    def _error_message(self, exc: Exception) -> str:
+        if isinstance(exc, ValidationError):
+            msg = self._flatten_validation_detail(getattr(exc, "detail", None))
+            return msg or "Resume import failed."
+        return str(exc).strip() or "Resume import failed."
+
+    def process_resume(self, upload: ResumeUpload) -> ResumeUpload:
+        upload.status = ResumeUpload.Status.PROCESSING
+        upload.error = None
+        upload.save(update_fields=["status", "error"])
+
+        parsed_data: Dict[str, Any] | None = None
+        try:
+            text = self._extract_text(upload.file)
+            parsed_data = self._parse_with_llm(text)
+            normalized = self._normalize_parsed_data(parsed_data)
+
+            upload.status = ResumeUpload.Status.COMPLETED
+            upload.parsed_data = normalized
+            upload.error = None
+            upload.save(update_fields=["status", "parsed_data", "error"])
+            return upload
+        except Exception as exc:
+            upload.status = ResumeUpload.Status.FAILED
+            upload.parsed_data = self._normalize_parsed_data(parsed_data) if isinstance(parsed_data, dict) else None
+            upload.error = self._error_message(exc)
+            upload.save(update_fields=["status", "parsed_data", "error"])
+            return upload
+
+    def _extract_text(self, file) -> str:
+        name = str(getattr(file, "name", "") or "").lower().strip()
+        if not name:
+            raise ValidationError({"file": "Resume file is missing."})
+
+        if name.endswith(".pdf"):
+            try:
+                import pdfplumber  # type: ignore
+            except ImportError as exc:
+                raise ValidationError({"detail": "PDF parser is unavailable. Install pdfplumber."}) from exc
+
+            file.open("rb")
+            try:
+                with pdfplumber.open(file.file) as pdf:
+                    pages = [page.extract_text() or "" for page in pdf.pages]
+                text_value = "\n".join(pages).strip()
+            finally:
+                file.close()
+
+            if not text_value:
+                raise ValidationError({"detail": "Could not extract text from PDF."})
+            return text_value
+
+        if name.endswith(".docx"):
+            try:
+                from docx import Document  # type: ignore
+            except ImportError as exc:
+                raise ValidationError({"detail": "DOCX parser is unavailable. Install python-docx."}) from exc
+
+            file.open("rb")
+            try:
+                document = Document(file.file)
+                text_value = "\n".join((p.text or "") for p in document.paragraphs).strip()
+            finally:
+                file.close()
+
+            if not text_value:
+                raise ValidationError({"detail": "Could not extract text from DOCX."})
+            return text_value
+
+        if name.endswith(".txt"):
+            file.open("rb")
+            try:
+                raw = file.read()
+            finally:
+                file.close()
+            text_value = raw.decode("utf-8", errors="ignore").strip()
+            if not text_value:
+                raise ValidationError({"detail": "Could not extract text from TXT."})
+            return text_value
+
+        raise ValidationError({"file": "Unsupported file type. Use PDF, DOCX, or TXT."})
+
+    def _parse_with_llm(self, text: str) -> Dict[str, Any]:
+        prompt = self.PROMPT_TEMPLATE.format(resume_text=text)
+
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                raw_response = self.ollama_client.generate(prompt)
+                payload_text = self._extract_json_payload(raw_response)
+                parsed = json.loads(payload_text)
+                if not isinstance(parsed, dict):
+                    raise ValueError("LLM output is not a JSON object.")
+                return parsed
+            except (json.JSONDecodeError, ValueError) as exc:
+                last_error = exc
+                service_logger.warning("resume_import.llm_invalid_json attempt=%s error=%s", attempt + 1, exc)
+
+        raise ValidationError({"detail": f"Could not parse LLM JSON output: {last_error}"})
+
+    def _extract_json_payload(self, value: str) -> str:
+        text_value = str(value or "").strip()
+        if not text_value:
+            raise ValueError("LLM returned empty response.")
+
+        fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text_value, flags=re.DOTALL | re.IGNORECASE)
+        if fence_match:
+            return fence_match.group(1).strip()
+
+        start = text_value.find("{")
+        end = text_value.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return text_value[start : end + 1].strip()
+
+        return text_value
+
+    def _normalize_parsed_data(self, parsed_data: Dict[str, Any] | None) -> Dict[str, list]:
+        raw = parsed_data if isinstance(parsed_data, dict) else {}
+        normalized = {
+            "projects": raw.get("projects") if isinstance(raw.get("projects"), list) else [],
+            "experience": raw.get("experience") if isinstance(raw.get("experience"), list) else [],
+            "education": raw.get("education") if isinstance(raw.get("education"), list) else [],
+            "skills": raw.get("skills") if isinstance(raw.get("skills"), list) else [],
+        }
+        return normalized
+
+    @transaction.atomic
+    def _map_to_domain(self, *, parsed_data: Dict[str, list], portfolio: Portfolio, user) -> Dict[str, int]:
+        project_service = ProjectService()
+        experience_service = ExperienceService()
+        skill_service = SkillService()
+
+        projects_created = 0
+        experiences_created = 0
+        skills_created = 0
+
+        for project in parsed_data.get("projects", []):
+            if not isinstance(project, dict):
+                continue
+
+            title = str(project.get("title") or "").strip()
+            description = str(project.get("description") or "").strip()
+            technologies = project.get("technologies")
+            tech_values = technologies if isinstance(technologies, list) else []
+            tech_tokens = [str(value).strip() for value in tech_values if str(value).strip()]
+            if tech_tokens:
+                tech_line = f"Technologies: {', '.join(tech_tokens)}"
+                description = f"{description}\n{tech_line}".strip() if description else tech_line
+
+            if not title:
+                continue
+
+            project_service.create(
+                portfolio_id=portfolio.id,
+                user=user,
+                validated_data={
+                    "title": title,
+                    "description": description or "Imported from resume",
+                    "github_url": None,
+                    "is_visible": True,
+                },
+            )
+            projects_created += 1
+
+        for exp in parsed_data.get("experience", []):
+            if not isinstance(exp, dict):
+                continue
+
+            company = str(exp.get("company") or "").strip()
+            role = str(exp.get("role") or "").strip()
+            duration = str(exp.get("duration") or "").strip() or "N/A"
+            detail = str(exp.get("description") or "").strip()
+
+            if not company or not role:
+                continue
+
+            role_value = f"{role} - {detail}".strip() if detail else role
+            experience_service.create(
+                portfolio_id=portfolio.id,
+                user=user,
+                validated_data={
+                    "company": company,
+                    "role": role_value,
+                    "timeline": duration,
+                    "is_visible": True,
+                },
+            )
+            experiences_created += 1
+
+        for edu in parsed_data.get("education", []):
+            if not isinstance(edu, dict):
+                continue
+
+            institution = str(edu.get("institution") or "").strip()
+            degree = str(edu.get("degree") or "").strip()
+            duration = str(edu.get("duration") or "").strip() or "N/A"
+
+            if not institution or not degree:
+                continue
+
+            experience_service.create(
+                portfolio_id=portfolio.id,
+                user=user,
+                validated_data={
+                    "company": institution,
+                    "role": f"Education - {degree}",
+                    "timeline": duration,
+                    "is_visible": True,
+                },
+            )
+            experiences_created += 1
+
+        seen_skills: set[str] = set()
+        for item in parsed_data.get("skills", []):
+            name = str(item).strip() if not isinstance(item, dict) else str(item.get("name") or "").strip()
+            if not name:
+                continue
+
+            key = name.lower()
+            if key in seen_skills:
+                continue
+            seen_skills.add(key)
+
+            level = 3
+            if isinstance(item, dict):
+                try:
+                    level = int(item.get("level", 3))
+                except (TypeError, ValueError):
+                    level = 3
+            level = max(1, min(level, 5))
+
+            skill_service.create(
+                portfolio_id=portfolio.id,
+                user=user,
+                validated_data={
+                    "name": name,
+                    "level": level,
+                    "is_visible": True,
+                },
+            )
+            skills_created += 1
+
+        return {
+            "projects_created": projects_created,
+            "experiences_created": experiences_created,
+            "skills_created": skills_created,
+        }
 
 
 class BasePortfolioChildService:

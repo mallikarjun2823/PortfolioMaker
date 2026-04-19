@@ -20,6 +20,26 @@ urlpatterns = [
         name="portfolio-apply-template",
     ),
     path(
+        "portfolios/<int:portfolio_id>/import-resume/",
+        views.ImportPortfolioFromResumeAPIView.as_view(),
+        name="portfolio-import-resume",
+    ),
+    path(
+        "resume-uploads/<int:upload_id>/status/",
+        views.ResumeUploadStatusAPIView.as_view(),
+        name="resume-upload-status",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/resume-draft/",
+        views.PortfolioResumeDraftAPIView.as_view(),
+        name="portfolio-resume-draft",
+    ),
+    path(
+        "portfolios/<int:portfolio_id>/resume-drafts/<int:upload_id>/apply/",
+        views.ApplyResumeDraftAPIView.as_view(),
+        name="portfolio-resume-draft-apply",
+    ),
+    path(
         "portfolios/<int:portfolio_id>/render/",
         views.PortfolioRenderAPIView.as_view(),
         name="portfolio-render",

@@ -12,8 +12,11 @@ export default function ProjectsPage() {
   const { portfolioId } = useParams()
 
   const [items, setItems] = useState([])
+  const [draftItems, setDraftItems] = useState([])
+  const [draftUploadId, setDraftUploadId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [applyingDraft, setApplyingDraft] = useState(false)
 
   const [creating, setCreating] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -39,11 +42,60 @@ export default function ProjectsPage() {
     setError(null)
     try {
       const res = await api.listProjects(token, portfolioId)
-      setItems(Array.isArray(res) ? res : [])
+      const projectItems = Array.isArray(res) ? res : []
+      setItems(projectItems)
+
+      if (projectItems.length > 0) {
+        setDraftItems([])
+        setDraftUploadId(null)
+      } else {
+        const draft = await api.getPortfolioResumeDraft(token, portfolioId)
+        const parsed = draft?.upload?.parsed_data
+        const projects = Array.isArray(parsed?.projects) ? parsed.projects : []
+        const mapped = projects
+          .filter((item) => item && typeof item === 'object')
+          .map((item, idx) => {
+            const technologies = Array.isArray(item.technologies)
+              ? item.technologies.map((t) => String(t || '').trim()).filter(Boolean)
+              : []
+            const baseDescription = String(item.description || '').trim()
+            const techLine = technologies.length ? `Technologies: ${technologies.join(', ')}` : ''
+            const combinedDescription = [baseDescription, techLine].filter(Boolean).join('\n')
+
+            return {
+              id: `draft-project-${idx + 1}`,
+              title: String(item.title || '').trim() || `Imported Project ${idx + 1}`,
+              description: combinedDescription,
+              order: idx + 1,
+              is_visible: true
+            }
+          })
+
+        setDraftItems(mapped)
+        setDraftUploadId(draft?.upload_id || null)
+      }
     } catch (err) {
       setError(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function onApplyDraft() {
+    if (!draftUploadId) return
+
+    setApplyingDraft(true)
+    setError(null)
+    try {
+      const result = await api.applyPortfolioResumeDraft(token, portfolioId, draftUploadId)
+      const summary = `${result?.projects_created || 0} projects, ${result?.experiences_created || 0} experiences, ${result?.skills_created || 0} skills`
+      toast.success(`Imported data saved (${summary})`)
+      await load()
+    } catch (err) {
+      setError(err)
+      toast.error(toErrorMessage(err, 'Could not save imported data'))
+    } finally {
+      setApplyingDraft(false)
     }
   }
 
@@ -171,6 +223,11 @@ export default function ProjectsPage() {
         right={
           <div className="row">
             <Button onClick={() => setCreateModalOpen(true)}>+ Add New Project</Button>
+            {draftUploadId && draftItems.length > 0 ? (
+              <Button onClick={onApplyDraft} disabled={applyingDraft}>
+                {applyingDraft ? 'Saving…' : 'Save Imported Data'}
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
           </div>
         }
@@ -180,6 +237,23 @@ export default function ProjectsPage() {
 
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
+      ) : items.length === 0 && draftItems.length > 0 ? (
+        <div className="grid">
+          <Card>
+            <div className="subtle">
+              Resume draft found. These projects are preview-only and not saved to the database yet.
+              Click "Save Imported Data" to persist them.
+            </div>
+          </Card>
+          {draftItems.map((p) => (
+            <Card key={p.id}>
+              <div style={{ fontWeight: 800 }}>{p.title}</div>
+              <div className="subtle">Order #{p.order} • Draft Preview</div>
+              <div className="divider" />
+              <div style={{ color: 'var(--muted)', fontSize: 13, whiteSpace: 'pre-wrap' }}>{p.description}</div>
+            </Card>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <EmptyState title="No projects yet" subtitle="Click + Add New Project." />
       ) : (

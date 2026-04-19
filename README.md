@@ -216,3 +216,38 @@ python manage.py check --deploy
 - [ ] migrations run on deploy
 - [ ] `VITE_API_BASE_URL` points to production API (`/api` included)
 - [ ] SPA rewrite configured for Vercel
+
+## 7. Local Ollama (Docker)
+
+This project supports local LLM parsing via Ollama.
+
+### 7.1 Start Ollama with Docker
+
+At repository root:
+
+```bash
+docker compose up -d
+```
+
+The compose stack includes:
+
+- `ollama` service exposed on `http://localhost:11434`
+- `ollama-model-init` one-shot service that waits for Ollama and pulls `tinyllama`
+- persistent volume `ollama_data`
+
+### 7.2 Backend environment variables
+
+Set:
+
+```text
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=tinyllama
+```
+
+If backend runs inside Docker on the same network as Ollama, use:
+
+```text
+OLLAMA_BASE_URL=http://ollama:11434
+```
+
+`OllamaClient` will normalize this to the chat endpoint automatically.

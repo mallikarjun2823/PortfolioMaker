@@ -101,6 +101,12 @@ const listThemePresets = (token) => apiRequest('/themes/', { token })
 const getPortfolioRender = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token })
 const getPublicPortfolioRenderBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/render/`)
 const getPortfolioOverview = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/overview/`, { token })
+const importPortfolioFromResume = (token, portfolioId, payload) =>
+  apiRequest(`/portfolios/${portfolioId}/import-resume/`, { method: 'POST', token, body: payload })
+const getResumeUploadStatus = (token, uploadId) => apiRequest(`/resume-uploads/${uploadId}/status/`, { token })
+const getPortfolioResumeDraft = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/resume-draft/`, { token })
+const applyPortfolioResumeDraft = (token, portfolioId, uploadId) =>
+  apiRequest(`/portfolios/${portfolioId}/resume-drafts/${uploadId}/apply/`, { method: 'POST', token })
 
 export const api = {
   // auth
@@ -115,6 +121,10 @@ export const api = {
   createPortfolio: (token, payload) => apiRequest('/portfolios/', { method: 'POST', token, body: payload }),
   getPortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { token }),
   getPortfolioOverview,
+  importPortfolioFromResume,
+  getResumeUploadStatus,
+  getPortfolioResumeDraft,
+  applyPortfolioResumeDraft,
   updatePortfolio: (token, id, payload, { method = 'PATCH' } = {}) =>
     apiRequest(`/portfolios/${id}/`, { method, token, body: payload }),
   deletePortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { method: 'DELETE', token }),

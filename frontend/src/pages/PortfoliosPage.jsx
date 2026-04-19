@@ -86,6 +86,29 @@ export default function PortfoliosPage() {
     }
   }
 
+  async function importResumeData(portfolioId, file) {
+    if (!portfolioId || !file) return { status: '', errorMessage: '' }
+
+    const form = new FormData()
+    form.append('file', file)
+
+    const res = await api.importPortfolioFromResume(token, portfolioId, form)
+    const uploadId = res?.upload_id
+
+    let status = String(res?.status || '').toUpperCase()
+    let errorMessage = ''
+    if (uploadId) {
+      try {
+        const statusRes = await api.getResumeUploadStatus(token, uploadId)
+        status = String(statusRes?.status || status || '').toUpperCase()
+        errorMessage = String(statusRes?.error || '').trim()
+      } catch {
+        // Fallback to import response status if status endpoint is temporarily unavailable.
+      }
+    }
+    return { status, errorMessage }
+  }
+
   async function onCreate(e) {
     e.preventDefault()
     setCreating(true)
@@ -93,6 +116,7 @@ export default function PortfoliosPage() {
     try {
       const rawThemeId = String(createThemeId || '').trim()
       const themeValue = rawThemeId ? Number(rawThemeId) : null
+      let created = null
 
       if (createResumeFile) {
         const form = new FormData()
@@ -102,9 +126,9 @@ export default function PortfoliosPage() {
         form.append('is_published', 'false')
         form.append('resume', createResumeFile)
         if (Number.isFinite(themeValue)) form.append('theme', String(themeValue))
-        await api.createPortfolio(token, form)
+        created = await api.createPortfolio(token, form)
       } else {
-        await api.createPortfolio(token, {
+        created = await api.createPortfolio(token, {
           title: createTitle,
           slug: createSlug,
           description: createDescription,
@@ -113,12 +137,34 @@ export default function PortfoliosPage() {
         })
       }
 
+      let importStatus = ''
+      let importError = ''
+      if (createResumeFile && created?.id) {
+        try {
+          const importResult = await importResumeData(created.id, createResumeFile)
+          importStatus = String(importResult?.status || '')
+          importError = String(importResult?.errorMessage || '')
+        } catch (importErr) {
+          toast.error(toErrorMessage(importErr, 'Portfolio created, but resume import failed'))
+        }
+      }
+
       setCreateTitle('')
       setCreateSlug('')
       setCreateDescription('')
       setCreateThemeId('')
       setCreateResumeFile(null)
-      toast.success('Portfolio created')
+
+      if (!createResumeFile) {
+        toast.success('Portfolio created')
+      } else if (importStatus === 'COMPLETED') {
+        toast.success('Portfolio created. Draft data is ready in tabs; click Save Imported Data to store it.')
+      } else if (importStatus === 'FAILED') {
+        toast.error(importError || 'Portfolio created, but resume draft generation failed')
+      } else {
+        toast.info('Portfolio created. Resume draft generation started')
+      }
+
       closeCreateModal()
       await load()
     } catch (err) {
@@ -191,6 +237,8 @@ export default function PortfoliosPage() {
     try {
       const rawThemeId = String(editThemeId || '').trim()
       const themeValue = rawThemeId ? Number(rawThemeId) : null
+      let importStatus = ''
+      let importError = ''
 
       if (editResumeFile) {
         const form = new FormData()
@@ -200,6 +248,14 @@ export default function PortfoliosPage() {
         form.append('resume', editResumeFile)
         if (Number.isFinite(themeValue)) form.append('theme', String(themeValue))
         await api.updatePortfolio(token, id, form)
+
+        try {
+          const importResult = await importResumeData(id, editResumeFile)
+          importStatus = String(importResult?.status || '')
+          importError = String(importResult?.errorMessage || '')
+        } catch (importErr) {
+          toast.error(toErrorMessage(importErr, 'Portfolio updated, but resume import failed'))
+        }
       } else {
         await api.updatePortfolio(token, id, {
           title: editTitle,
@@ -209,7 +265,16 @@ export default function PortfoliosPage() {
         })
       }
 
-      toast.success('Portfolio updated')
+      if (!editResumeFile) {
+        toast.success('Portfolio updated')
+      } else if (importStatus === 'COMPLETED') {
+        toast.success('Portfolio updated. Draft data is ready in tabs; click Save Imported Data to store it.')
+      } else if (importStatus === 'FAILED') {
+        toast.error(importError || 'Portfolio updated, but resume draft generation failed')
+      } else {
+        toast.info('Portfolio updated. Resume draft generation started')
+      }
+
       cancelEdit()
       await load()
     } catch (err) {
@@ -319,7 +384,7 @@ export default function PortfoliosPage() {
                     <Field label="Resume File" hint="Optional. Upload a new file to replace current resume.">
                       <Input
                         type="file"
-                        accept=".pdf,.doc,.docx,.txt"
+                        accept=".pdf,.docx,.txt"
                         onChange={(e) => setEditResumeFile(e.target.files?.[0] || null)}
                       />
                       {editResumeUrl ? (
@@ -395,10 +460,10 @@ export default function PortfoliosPage() {
             </Field>
           </div>
 
-          <Field label="Resume File" hint="Optional (PDF/DOC/TXT).">
+          <Field label="Resume File" hint="Optional (PDF/DOCX/TXT).">
             <Input
               type="file"
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,.docx,.txt"
               onChange={(e) => setCreateResumeFile(e.target.files?.[0] || null)}
             />
           </Field>

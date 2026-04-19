@@ -33,6 +33,8 @@ from .serializers import (
     ProjectPutSerializer,
     ProjectResponseSerializer,
     RegisterSerializer,
+    ResumeUploadSerializer,
+    ResumeUploadStatusSerializer,
     SectionCreateSerializer,
     SectionPatchSerializer,
     SectionPutSerializer,
@@ -53,6 +55,7 @@ from .services import (
     PortfolioService,
     PortfolioTemplateService,
     ProjectService,
+    ResumeImportService,
     SectionService,
     SkillService,
 )
@@ -203,6 +206,70 @@ class ApplyPortfolioTemplateAPIView(APIView):
             template_id=serializer.validated_data["template_id"],
             user=request.user,
         )
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class ImportPortfolioFromResumeAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    service = ResumeImportService()
+
+    def post(self, request, portfolio_id: int):
+        serializer = ResumeUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        upload = self.service.import_resume(
+            portfolio_id=portfolio_id,
+            user=request.user,
+            file=serializer.validated_data["file"],
+        )
+        response = ResumeUploadStatusSerializer(upload)
+        return Response(
+            {
+                "upload_id": upload.id,
+                "status": upload.status,
+                "upload": response.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ResumeUploadStatusAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ResumeImportService()
+
+    def get(self, request, upload_id: int):
+        upload = self.service.get_upload(upload_id=upload_id, user=request.user)
+        serializer = ResumeUploadStatusSerializer(upload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PortfolioResumeDraftAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ResumeImportService()
+
+    def get(self, request, portfolio_id: int):
+        upload = self.service.get_latest_draft(portfolio_id=portfolio_id, user=request.user)
+        if upload is None:
+            return Response({"upload": None}, status=status.HTTP_200_OK)
+
+        serializer = ResumeUploadStatusSerializer(upload)
+        return Response(
+            {
+                "upload_id": upload.id,
+                "status": upload.status,
+                "upload": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ApplyResumeDraftAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = ResumeImportService()
+
+    def post(self, request, portfolio_id: int, upload_id: int):
+        result = self.service.apply_upload(portfolio_id=portfolio_id, upload_id=upload_id, user=request.user)
         return Response(result, status=status.HTTP_200_OK)
 
 

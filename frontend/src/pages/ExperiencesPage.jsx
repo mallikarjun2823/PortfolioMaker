@@ -12,8 +12,11 @@ export default function ExperiencesPage() {
   const { portfolioId } = useParams()
 
   const [items, setItems] = useState([])
+  const [draftItems, setDraftItems] = useState([])
+  const [draftUploadId, setDraftUploadId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [applyingDraft, setApplyingDraft] = useState(false)
 
   const [creating, setCreating] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -32,11 +35,83 @@ export default function ExperiencesPage() {
     setError(null)
     try {
       const res = await api.listExperiences(token, portfolioId)
-      setItems(Array.isArray(res) ? res : [])
+      const experienceItems = Array.isArray(res) ? res : []
+      setItems(experienceItems)
+
+      if (experienceItems.length > 0) {
+        setDraftItems([])
+        setDraftUploadId(null)
+      } else {
+        const draft = await api.getPortfolioResumeDraft(token, portfolioId)
+        const parsed = draft?.upload?.parsed_data
+        const rawExperience = Array.isArray(parsed?.experience) ? parsed.experience : []
+        const rawEducation = Array.isArray(parsed?.education) ? parsed.education : []
+
+        const expItems = rawExperience
+          .filter((item) => item && typeof item === 'object')
+          .map((item, idx) => {
+            const company = String(item.company || '').trim()
+            const role = String(item.role || '').trim()
+            const duration = String(item.duration || '').trim() || 'N/A'
+            const detail = String(item.description || '').trim()
+            const roleValue = detail ? `${role} - ${detail}` : role
+            if (!company || !roleValue.trim()) return null
+
+            return {
+              id: `draft-exp-${idx + 1}`,
+              company,
+              role: roleValue,
+              timeline: duration,
+              order: idx + 1,
+              is_visible: true
+            }
+          })
+          .filter(Boolean)
+
+        const eduItems = rawEducation
+          .filter((item) => item && typeof item === 'object')
+          .map((item, idx) => {
+            const institution = String(item.institution || '').trim()
+            const degree = String(item.degree || '').trim()
+            const duration = String(item.duration || '').trim() || 'N/A'
+            if (!institution || !degree) return null
+
+            return {
+              id: `draft-edu-${idx + 1}`,
+              company: institution,
+              role: `Education - ${degree}`,
+              timeline: duration,
+              order: expItems.length + idx + 1,
+              is_visible: true
+            }
+          })
+          .filter(Boolean)
+
+        setDraftItems([...expItems, ...eduItems])
+        setDraftUploadId(draft?.upload_id || null)
+      }
     } catch (err) {
       setError(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function onApplyDraft() {
+    if (!draftUploadId) return
+
+    setApplyingDraft(true)
+    setError(null)
+    try {
+      const result = await api.applyPortfolioResumeDraft(token, portfolioId, draftUploadId)
+      const summary = `${result?.projects_created || 0} projects, ${result?.experiences_created || 0} experiences, ${result?.skills_created || 0} skills`
+      toast.success(`Imported data saved (${summary})`)
+      await load()
+    } catch (err) {
+      setError(err)
+      toast.error(toErrorMessage(err, 'Could not save imported data'))
+    } finally {
+      setApplyingDraft(false)
     }
   }
 
@@ -138,6 +213,11 @@ export default function ExperiencesPage() {
         right={
           <div className="row">
             <Button onClick={() => setCreateModalOpen(true)}>+ Add New Experience</Button>
+            {draftUploadId && draftItems.length > 0 ? (
+              <Button onClick={onApplyDraft} disabled={applyingDraft}>
+                {applyingDraft ? 'Saving…' : 'Save Imported Data'}
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>
           </div>
         }
@@ -147,6 +227,22 @@ export default function ExperiencesPage() {
 
       {loading ? (
         <div style={{ padding: 12, color: 'var(--muted)' }}>Loading…</div>
+      ) : items.length === 0 && draftItems.length > 0 ? (
+        <div className="grid">
+          <Card>
+            <div className="subtle">
+              Resume draft found. These experiences are preview-only and not saved yet.
+              Click "Save Imported Data" to persist them.
+            </div>
+          </Card>
+          {draftItems.map((e) => (
+            <Card key={e.id}>
+              <div style={{ fontWeight: 800 }}>{e.company}</div>
+              <div className="subtle">{e.role} • {e.timeline}</div>
+              <div className="subtle">Order #{e.order} • Draft Preview</div>
+            </Card>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <EmptyState title="No experiences yet" subtitle="Click + Add New Experience." />
       ) : (

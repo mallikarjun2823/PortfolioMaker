@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
@@ -9,7 +10,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from PIL import Image
 
-from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, Section, Skill, Theme
+from .models import Block, Element, Experience, Portfolio, PortfolioTemplate, Project, ResumeUpload, Section, Skill, Theme
 
 
 class SectionCRUDTests(APITestCase):
@@ -963,3 +964,150 @@ class PortfolioOverviewApiTests(APITestCase):
 		url = reverse("portfolio-overview", kwargs={"portfolio_id": self.portfolio.id})
 		res = self.client.get(url)
 		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class ResumeImportApiTests(APITestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.owner = User.objects.create_user(username="resume_import_owner", password="password123")
+		self.other = User.objects.create_user(username="resume_import_other", password="password123")
+		self.portfolio = Portfolio.objects.create(
+			user=self.owner,
+			title="Import Portfolio",
+			slug="import-portfolio",
+			description="",
+			theme=None,
+			is_published=False,
+		)
+
+	@patch("portfolio.services.OllamaClient.generate")
+	def test_import_resume_creates_draft_and_applies_on_explicit_save(self, mocked_generate):
+		mocked_generate.return_value = """
+{
+  "projects": [
+    {
+      "title": "Portfolio Builder",
+      "description": "Built portfolio app",
+      "technologies": ["Django", "React"]
+    }
+  ],
+  "experience": [
+    {
+      "company": "Acme",
+      "role": "Software Engineer",
+      "duration": "2022-2025",
+      "description": "Built APIs"
+    }
+  ],
+  "education": [
+    {
+      "institution": "XYZ University",
+      "degree": "B.Tech CSE",
+      "duration": "2018-2022"
+    }
+  ],
+  "skills": ["Python", "Django", "React"]
+}
+""".strip()
+
+		self.client.force_authenticate(user=self.owner)
+		resume = SimpleUploadedFile("resume.txt", b"sample resume content", content_type="text/plain")
+		url = reverse("portfolio-import-resume", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.post(url, data={"file": resume}, format="multipart")
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+		body = res.json()
+		self.assertEqual(body["status"], "COMPLETED")
+		upload_id = body["upload_id"]
+
+		upload = ResumeUpload.objects.get(id=upload_id)
+		self.assertEqual(upload.status, "COMPLETED")
+		self.assertIsInstance(upload.parsed_data, dict)
+
+		# Import should only produce draft data, not domain records yet.
+		self.assertEqual(Project.objects.filter(portfolio=self.portfolio).count(), 0)
+		self.assertEqual(Experience.objects.filter(portfolio=self.portfolio).count(), 0)
+		self.assertEqual(Skill.objects.filter(portfolio=self.portfolio).count(), 0)
+
+		draft_url = reverse("portfolio-resume-draft", kwargs={"portfolio_id": self.portfolio.id})
+		draft_res = self.client.get(draft_url)
+		self.assertEqual(draft_res.status_code, status.HTTP_200_OK)
+		draft_body = draft_res.json()
+		self.assertEqual(draft_body["status"], "COMPLETED")
+		self.assertEqual(draft_body["upload_id"], upload_id)
+		self.assertIn("parsed_data", draft_body["upload"])
+
+		apply_url = reverse(
+			"portfolio-resume-draft-apply",
+			kwargs={"portfolio_id": self.portfolio.id, "upload_id": upload_id},
+		)
+		apply_res = self.client.post(apply_url, data={}, format="json")
+		self.assertEqual(apply_res.status_code, status.HTTP_200_OK)
+		self.assertEqual(apply_res.json()["projects_created"], 1)
+		self.assertEqual(apply_res.json()["experiences_created"], 2)
+		self.assertEqual(apply_res.json()["skills_created"], 3)
+
+		self.assertEqual(Project.objects.filter(portfolio=self.portfolio).count(), 1)
+		self.assertEqual(Experience.objects.filter(portfolio=self.portfolio).count(), 2)
+		self.assertEqual(Skill.objects.filter(portfolio=self.portfolio).count(), 3)
+
+		upload.refresh_from_db()
+		self.assertIsNone(upload.parsed_data)
+
+		education = Experience.objects.filter(portfolio=self.portfolio, company="XYZ University").first()
+		self.assertIsNotNone(education)
+		self.assertTrue("Education" in education.role)
+
+		status_url = reverse("resume-upload-status", kwargs={"upload_id": upload_id})
+		status_res = self.client.get(status_url)
+		self.assertEqual(status_res.status_code, status.HTTP_200_OK)
+		self.assertEqual(status_res.json()["status"], "COMPLETED")
+
+	@patch("portfolio.services.OllamaClient.generate")
+	def test_import_resume_marks_failed_when_llm_returns_invalid_json(self, mocked_generate):
+		mocked_generate.return_value = "not-json"
+		self.client.force_authenticate(user=self.owner)
+
+		resume = SimpleUploadedFile("resume.txt", b"sample resume content", content_type="text/plain")
+		url = reverse("portfolio-import-resume", kwargs={"portfolio_id": self.portfolio.id})
+		res = self.client.post(url, data={"file": resume}, format="multipart")
+		self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(res.json()["status"], "FAILED")
+
+		upload = ResumeUpload.objects.get(id=res.json()["upload_id"])
+		self.assertEqual(upload.status, "FAILED")
+		self.assertTrue(bool(upload.error))
+
+	def test_resume_upload_status_is_owner_scoped(self):
+		upload = ResumeUpload.objects.create(
+			user=self.owner,
+			portfolio=self.portfolio,
+			file=SimpleUploadedFile("resume.txt", b"abc", content_type="text/plain"),
+			status=ResumeUpload.Status.PENDING,
+		)
+
+		self.client.force_authenticate(user=self.other)
+		url = reverse("resume-upload-status", kwargs={"upload_id": upload.id})
+		res = self.client.get(url)
+		self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_resume_draft_and_apply_are_owner_scoped(self):
+		upload = ResumeUpload.objects.create(
+			user=self.owner,
+			portfolio=self.portfolio,
+			file=SimpleUploadedFile("resume.txt", b"abc", content_type="text/plain"),
+			status=ResumeUpload.Status.COMPLETED,
+			parsed_data={"projects": [{"title": "X", "description": "Y", "technologies": []}], "experience": [], "education": [], "skills": []},
+		)
+
+		self.client.force_authenticate(user=self.other)
+		draft_url = reverse("portfolio-resume-draft", kwargs={"portfolio_id": self.portfolio.id})
+		draft_res = self.client.get(draft_url)
+		self.assertEqual(draft_res.status_code, status.HTTP_404_NOT_FOUND)
+
+		apply_url = reverse(
+			"portfolio-resume-draft-apply",
+			kwargs={"portfolio_id": self.portfolio.id, "upload_id": upload.id},
+		)
+		apply_res = self.client.post(apply_url, data={}, format="json")
+		self.assertEqual(apply_res.status_code, status.HTTP_404_NOT_FOUND)
