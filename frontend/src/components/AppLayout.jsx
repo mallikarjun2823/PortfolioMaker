@@ -8,68 +8,10 @@ function clsx(...parts) {
   return parts.filter(Boolean).join(' ')
 }
 
-function asObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
-}
-
-function toCssColor(value, fallback) {
-  const v = String(value || '').trim()
-  return v || fallback
-}
-
-function hexToRgbTriplet(value) {
-  const raw = String(value || '').trim()
-  const match = raw.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)
-  if (!match) return null
-  let hex = match[1]
-  if (hex.length === 3) {
-    hex = `${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`
-  }
-  const n = Number.parseInt(hex, 16)
-  if (Number.isNaN(n)) return null
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  return `${r}, ${g}, ${b}`
-}
-
-function buildThemeVars(themeConfig) {
-  const cfg = asObject(themeConfig)
-  if (!cfg) return null
-
-  const primary = toCssColor(cfg.primary_color, '#0f172a')
-  const secondary = toCssColor(cfg.secondary_color, '#1e293b')
-  const text = toCssColor(cfg.text_color, '#e2e8f0')
-  const fontFamily = String(cfg.font_family || '').trim()
-
-  const accentRgb = hexToRgbTriplet(secondary) || hexToRgbTriplet(primary) || '79, 70, 229'
-  const textRgb = hexToRgbTriplet(text) || '226, 232, 240'
-
-  return {
-    '--bg': primary,
-    '--card': secondary,
-    '--text': text,
-    '--muted': `rgba(${textRgb}, 0.78)`,
-    '--border': `rgba(${textRgb}, 0.18)`,
-    '--text-rgb': textRgb,
-
-    '--primary': secondary,
-    '--primaryHover': secondary,
-    '--primary-rgb': accentRgb,
-    '--primaryText': text,
-
-    '--input-bg': `rgba(${textRgb}, 0.08)`,
-    '--shadow': '0 10px 30px rgba(0, 0, 0, 0.22)',
-    '--shadowHover': '0 14px 40px rgba(0, 0, 0, 0.30)',
-    ...(fontFamily ? { '--app-font-family': fontFamily } : {})
-  }
-}
-
 export default function AppLayout() {
   const { token, logout } = useAuth()
   const [portfolios, setPortfolios] = useState([])
   const [loadingPortfolios, setLoadingPortfolios] = useState(false)
-  const [activeThemeVars, setActiveThemeVars] = useState(null)
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -93,35 +35,6 @@ export default function AppLayout() {
     loadPortfolios()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
-
-  useEffect(() => {
-    let ignore = false
-
-    if (!token || !activePortfolioId) {
-      setActiveThemeVars(null)
-      return () => {
-        ignore = true
-      }
-    }
-
-    ;(async () => {
-      try {
-        const overview = await api.getPortfolioOverview(token, activePortfolioId)
-        const vars = buildThemeVars(overview?.portfolio?.theme?.config)
-        if (!ignore) {
-          setActiveThemeVars(vars)
-        }
-      } catch {
-        if (!ignore) {
-          setActiveThemeVars(null)
-        }
-      }
-    })()
-
-    return () => {
-      ignore = true
-    }
-  }, [token, activePortfolioId])
 
   function onLogout() {
     logout()
@@ -170,7 +83,7 @@ export default function AppLayout() {
     : []
 
   return (
-    <div className={clsx('appShell', !isDetailRoute && 'appShellNoSidebar')} style={isDetailRoute ? (activeThemeVars || undefined) : undefined}>
+    <div className={clsx('appShell', !isDetailRoute && 'appShellNoSidebar')}>
       {isDetailRoute ? (
         <aside className="sidebar">
           <div className="sidebarTop">

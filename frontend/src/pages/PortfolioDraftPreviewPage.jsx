@@ -42,80 +42,65 @@ function getThemeVariables(payload) {
   }
 }
 
-export default function PortfolioRenderPage() {
+export default function PortfolioDraftPreviewPage() {
   const { token } = useAuth()
-  const { slug } = useParams()
+  const { portfolioId } = useParams()
   const [searchParams] = useSearchParams()
 
   const [overviewPayload, setOverviewPayload] = useState(null)
   const [customPayload, setCustomPayload] = useState(null)
-  const [renderMode, setRenderMode] = useState('template')
-  const [templateId, setTemplateId] = useState('minimal')
-  const [portfolioId, setPortfolioId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [renderMode, setRenderMode] = useState('template')
+  const [templateId, setTemplateId] = useState('minimal')
   const rawModeFromQuery = String(searchParams.get('mode') || '').trim()
   const modeFromQuery = rawModeFromQuery ? normalizeRenderMode(rawModeFromQuery) : ''
   const templateFromQuery = String(searchParams.get('template') || '').trim()
   const isTemplateMode = renderMode !== 'custom'
 
-  function onSwitchMode(nextMode) {
-    const mode = normalizeRenderMode(nextMode)
-    setRenderMode(mode)
-    try {
-      const key = `pm_public_mode_${slug}`
-      window.localStorage.setItem(key, mode)
-    } catch {
-      // Keep runtime state only.
-    }
-  }
-
   async function load() {
+    if (!token) return
     setLoading(true)
     setError(null)
     try {
       if (renderMode === 'custom') {
         const [renderRes, overviewRes] = await Promise.all([
-          api.getPublicPortfolioRenderBySlug(slug),
-          api.getPublicPortfolioOverviewBySlug(slug),
+          api.getPortfolioRender(token, portfolioId),
+          api.getPortfolioOverview(token, portfolioId),
         ])
         setOverviewPayload(overviewRes || null)
         setCustomPayload(hydrateCustomRenderPayload(renderRes || null, overviewRes || null))
       } else {
-        const res = await api.getPublicPortfolioOverviewBySlug(slug)
+        const res = await api.getPortfolioOverview(token, portfolioId)
         setOverviewPayload(res || null)
-      }
-
-      if (token) {
-        try {
-          const portfolios = await api.listPortfolios(token)
-          const match = (Array.isArray(portfolios) ? portfolios : []).find(
-            (p) => String(p?.slug || '') === String(slug || '')
-          )
-          setPortfolioId(match?.id || null)
-        } catch {
-          setPortfolioId(null)
-        }
-      } else {
-        setPortfolioId(null)
       }
     } catch (err) {
       setError(err)
       setOverviewPayload(null)
       setCustomPayload(null)
-      setPortfolioId(null)
     } finally {
       setLoading(false)
     }
   }
 
+  function onSwitchMode(nextMode) {
+    const mode = normalizeRenderMode(nextMode)
+    setRenderMode(mode)
+    try {
+      const modeKey = `pm_render_mode_${portfolioId}`
+      window.localStorage.setItem(modeKey, mode)
+    } catch {
+      // Keep runtime state only.
+    }
+  }
+
   useEffect(() => {
-    const key = `pm_public_mode_${slug}`
+    const modeKey = `pm_render_mode_${portfolioId}`
 
     if (modeFromQuery) {
       setRenderMode(modeFromQuery)
       try {
-        window.localStorage.setItem(key, modeFromQuery)
+        window.localStorage.setItem(modeKey, modeFromQuery)
       } catch {
         // Keep runtime state only.
       }
@@ -123,20 +108,20 @@ export default function PortfolioRenderPage() {
     }
 
     try {
-      const saved = window.localStorage.getItem(key)
+      const saved = window.localStorage.getItem(modeKey)
       if (saved) setRenderMode(normalizeRenderMode(saved))
     } catch {
       // Keep default mode.
     }
-  }, [slug, modeFromQuery])
+  }, [portfolioId, modeFromQuery])
 
   useEffect(() => {
-    const slugKey = `pm_public_template_${slug}`
+    const key = `pm_template_${portfolioId}`
 
     if (templateFromQuery) {
       setTemplateId(templateFromQuery)
       try {
-        window.localStorage.setItem(slugKey, templateFromQuery)
+        window.localStorage.setItem(key, templateFromQuery)
       } catch {
         // Keep runtime state only.
       }
@@ -144,28 +129,17 @@ export default function PortfolioRenderPage() {
     }
 
     try {
-      const saved = window.localStorage.getItem(slugKey)
-      if (saved) setTemplateId(saved)
-    } catch {
-      // Keep default template.
-    }
-  }, [slug, templateFromQuery])
-
-  useEffect(() => {
-    if (!portfolioId || templateFromQuery) return
-    try {
-      const key = `pm_template_${portfolioId}`
       const saved = window.localStorage.getItem(key)
       if (saved) setTemplateId(saved)
     } catch {
-      // Keep current template.
+      // Keep default template.
     }
   }, [portfolioId, templateFromQuery])
 
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, renderMode])
+  }, [token, portfolioId, renderMode])
 
   const template = getTemplateById(templateId)
   const data = toTemplateData(overviewPayload)
@@ -190,15 +164,9 @@ export default function PortfolioRenderPage() {
         >
           Custom Layout
         </button>
-        {portfolioId ? (
-          <Link className="siteButton siteButtonGhost" to={`/app/portfolios/${portfolioId}/build`}>
-            Back to Build
-          </Link>
-        ) : token ? (
-          <Link className="siteButton siteButtonGhost" to="/app/portfolios">
-            Back to Portfolios
-          </Link>
-        ) : null}
+        <Link className="siteButton siteButtonGhost" to={`/app/portfolios/${portfolioId}/build`}>
+          Back to Build
+        </Link>
         <button className="siteButton" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
       </div>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import status
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -24,6 +25,7 @@ from .serializers import (
     LoginSerializer,
     PortfolioCreateSerializer,
     PortfolioOverviewSerializer,
+    PortfolioRenderSerializer,
     PortfolioPatchSerializer,
     PortfolioPutSerializer,
     PortfolioTemplateResponseSerializer,
@@ -51,39 +53,101 @@ from .services import (
     ElementService,
     ExperienceService,
     PortfolioOverviewService,
-    PortfolioRenderService,
     PortfolioService,
     PortfolioTemplateService,
     ProjectService,
     ResumeImportService,
     SectionService,
     SkillService,
+    DomainException,
+    DomainNotFoundException,
+    DomainPermissionException,
+    DomainValidationException,
 )
 
 from .models import Theme
 
 
-class PortfolioRenderAPIView(APIView):
+def _extract_error_message(detail):
+    if isinstance(detail, list):
+        for item in detail:
+            msg = _extract_error_message(item)
+            if msg:
+                return msg
+        return ""
+
+    if isinstance(detail, dict):
+        if "detail" in detail:
+            return _extract_error_message(detail.get("detail"))
+
+        for value in detail.values():
+            msg = _extract_error_message(value)
+            if msg:
+                return msg
+        return ""
+
+    value = str(detail or "").strip()
+    return value
+
+
+class DomainHandledAPIView(APIView):
+    def handle_exception(self, exc):
+        if isinstance(exc, DomainException):
+            return Response({"error": exc.message}, status=exc.status_code)
+
+        if isinstance(exc, ValidationError):
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        if isinstance(exc, PermissionDenied):
+            message = _extract_error_message(getattr(exc, "detail", None)) or str(exc) or "Forbidden."
+            return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
+
+        if isinstance(exc, NotFound):
+            message = _extract_error_message(getattr(exc, "detail", None)) or str(exc) or "Not found."
+            return Response({"error": message}, status=status.HTTP_404_NOT_FOUND)
+
+        return super().handle_exception(exc)
+
+
+class PortfolioRenderMixin:
+    portfolio_service = PortfolioService()
+
+    def _render_for_owner(self, *, portfolio_id: int, user):
+        try:
+            portfolio = self.portfolio_service.get_full_portfolio(portfolio_id=portfolio_id, user=user)
+        except DomainException:
+            raise
+        except NotFound as exc:
+            raise DomainNotFoundException(_extract_error_message(getattr(exc, "detail", None)) or "Portfolio not found.")
+        except PermissionDenied as exc:
+            raise DomainPermissionException(_extract_error_message(getattr(exc, "detail", None)) or "Forbidden.")
+
+        return PortfolioRenderSerializer(portfolio).data
+
+
+class PortfolioRenderAPIView(DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
-    service = PortfolioRenderService()
+    service = PortfolioService()
 
     def get(self, request, portfolio_id: int):
-        payload = self.service.render_portfolio(
-            portfolio_id=portfolio_id,
-            user_id=request.user.id,
-            include_unpublished=True,
-        )
-        return Response(payload, status=status.HTTP_200_OK)
+        portfolio = self.service.get_full_portfolio(portfolio_id=portfolio_id, user=request.user)
+        serializer = PortfolioRenderSerializer(portfolio)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class PublicPortfolioRenderBySlugAPIView(APIView):
+class PublicPortfolioRenderBySlugAPIView(DomainHandledAPIView):
     authentication_classes = []
     permission_classes = [AllowAny]
-    service = PortfolioRenderService()
+    service = PortfolioService()
 
     def get(self, request, slug: str):
-        payload = self.service.render_public_portfolio_by_slug(slug)
-        return Response(payload, status=status.HTTP_200_OK)
+        portfolio = self.service.get_public_full_portfolio_by_slug(slug=slug)
+        serializer = PortfolioRenderSerializer(portfolio)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PublicPortfolioBySlugAPIView(PublicPortfolioRenderBySlugAPIView):
+    pass
 
 
 class RegisterAPIView(APIView):
@@ -189,6 +253,17 @@ class PortfolioOverviewAPIView(APIView):
 
     def get(self, request, portfolio_id: int):
         payload = self.service.get_overview(portfolio_id=portfolio_id, user=request.user)
+        serializer = PortfolioOverviewSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PublicPortfolioOverviewBySlugAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    service = PortfolioOverviewService()
+
+    def get(self, request, slug: str):
+        payload = self.service.get_public_overview_by_slug(slug=slug)
         serializer = PortfolioOverviewSerializer(payload)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -471,7 +546,7 @@ class ExperienceDetailAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class SectionListCreateAPIView(APIView):
+class SectionListCreateAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = SectionService()
 
@@ -483,16 +558,27 @@ class SectionListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int):
         serializer = SectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        section = self.service.create(
-            portfolio_id=portfolio_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
-        response = SectionResponseSerializer(section)
-        return Response(response.data, status=status.HTTP_201_CREATED)
+        try:
+            section = self.service.create(
+                portfolio_id=portfolio_id,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
-class SectionDetailAPIView(APIView):
+class SectionDetailAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = SectionService()
 
@@ -509,33 +595,68 @@ class SectionDetailAPIView(APIView):
         section = self._get_object(request, portfolio_id, section_id)
         serializer = SectionPutSerializer(section, data=request.data)
         serializer.is_valid(raise_exception=True)
-        section = self.service.update(
-            instance=section,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
-        response = SectionResponseSerializer(section)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            section = self.service.update(
+                instance=section,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def patch(self, request, portfolio_id: int, section_id: int):
         section = self._get_object(request, portfolio_id, section_id)
         serializer = SectionPatchSerializer(section, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        section = self.service.update(
-            instance=section,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
-        response = SectionResponseSerializer(section)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            section = self.service.update(
+                instance=section,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def delete(self, request, portfolio_id: int, section_id: int):
         section = self._get_object(request, portfolio_id, section_id)
-        self.service.delete(instance=section, user=request.user)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        target_portfolio_id = section.portfolio_id
+        try:
+            self.service.delete(instance=section, user=request.user)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=target_portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
-class BlockListCreateAPIView(APIView):
+class BlockListCreateAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = BlockService()
 
@@ -547,17 +668,28 @@ class BlockListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int, section_id: int):
         serializer = BlockCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        block = self.service.create(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
-        response = BlockResponseSerializer(block)
-        return Response(response.data, status=status.HTTP_201_CREATED)
+        try:
+            block = self.service.create(
+                portfolio_id=portfolio_id,
+                section_id=section_id,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
-class BlockDetailAPIView(APIView):
+class BlockDetailAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = BlockService()
 
@@ -579,25 +711,60 @@ class BlockDetailAPIView(APIView):
         block = self._get_object(request, portfolio_id, section_id, block_id)
         serializer = BlockPutSerializer(block, data=request.data)
         serializer.is_valid(raise_exception=True)
-        block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
-        response = BlockResponseSerializer(block)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def patch(self, request, portfolio_id: int, section_id: int, block_id: int):
         block = self._get_object(request, portfolio_id, section_id, block_id)
         serializer = BlockPatchSerializer(block, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
-        response = BlockResponseSerializer(block)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            block = self.service.update(instance=block, user=request.user, validated_data=serializer.validated_data)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def delete(self, request, portfolio_id: int, section_id: int, block_id: int):
         block = self._get_object(request, portfolio_id, section_id, block_id)
-        self.service.delete(instance=block, user=request.user)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        target_portfolio_id = block.section.portfolio_id
+        try:
+            self.service.delete(instance=block, user=request.user)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=target_portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
-class ElementListCreateAPIView(APIView):
+class ElementListCreateAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = ElementService()
 
@@ -614,18 +781,29 @@ class ElementListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int, section_id: int, block_id: int):
         serializer = ElementCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        element = self.service.create(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            block_id=block_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
-        response = ElementResponseSerializer(element)
-        return Response(response.data, status=status.HTTP_201_CREATED)
+        try:
+            element = self.service.create(
+                portfolio_id=portfolio_id,
+                section_id=section_id,
+                block_id=block_id,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=element.block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
-class ElementDetailAPIView(APIView):
+class ElementDetailAPIView(PortfolioRenderMixin, DomainHandledAPIView):
     permission_classes = [IsAuthenticated]
     service = ElementService()
 
@@ -648,19 +826,54 @@ class ElementDetailAPIView(APIView):
         element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
         serializer = ElementPutSerializer(element, data=request.data)
         serializer.is_valid(raise_exception=True)
-        element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
-        response = ElementResponseSerializer(element)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=element.block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def patch(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
         element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
         serializer = ElementPatchSerializer(element, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
-        response = ElementResponseSerializer(element)
-        return Response(response.data, status=status.HTTP_200_OK)
+        try:
+            element = self.service.update(instance=element, user=request.user, validated_data=serializer.validated_data)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=element.block.section.portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)
 
     def delete(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
         element = self._get_object(request, portfolio_id, section_id, block_id, element_id)
-        self.service.delete(instance=element, user=request.user)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        target_portfolio_id = element.block.section.portfolio_id
+        try:
+            self.service.delete(instance=element, user=request.user)
+        except ValidationError as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Invalid request."
+            raise DomainValidationException(message)
+        except PermissionDenied as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Forbidden."
+            raise DomainPermissionException(message)
+        except NotFound as exc:
+            message = _extract_error_message(getattr(exc, "detail", None)) or "Not found."
+            raise DomainNotFoundException(message)
+
+        payload = self._render_for_owner(portfolio_id=target_portfolio_id, user=request.user)
+        return Response(payload, status=status.HTTP_200_OK)

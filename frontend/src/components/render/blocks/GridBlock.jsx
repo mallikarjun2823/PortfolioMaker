@@ -50,7 +50,13 @@ export default function GridBlock({ items }) {
       {projects.map((item, idx) => {
         const genericValues = primitiveValues(item)
         const title = extractText(item, titleKeys) || genericValues[0] || `Item ${idx + 1}`
-        const description = extractText(item, descriptionKeys) || genericValues[1] || null
+        const fallbackDescription = genericValues.find((value) => {
+          const text = String(value || '').trim()
+          if (!text) return false
+          if (text === title) return false
+          return !looksLikeImageUrl(text)
+        })
+        const description = extractText(item, descriptionKeys) || fallbackDescription || null
         const github = extractUrl(item, githubKeys, { github: true })
         const live = extractUrl(item, liveKeys)
         const tags = extractArray(item, tagKeys)

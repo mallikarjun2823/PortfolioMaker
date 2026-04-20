@@ -61,7 +61,7 @@ function scrollToId(id) {
 }
 
 export default function PortfolioRenderer({ payload }) {
-  const portfolio = payload?.portfolio
+  const portfolio = payload
   const sections = asArray(portfolio?.sections)
 
   const pairs = normalizePairsFromKeyValueBlocks(sections)

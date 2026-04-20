@@ -1,3 +1,5 @@
+import { resolveAssetUrl } from '../../../api/client.js'
+
 export function asArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -98,6 +100,10 @@ export function extractUrl(obj, keys, { github = false } = {}) {
     const raw = v.trim()
     if (!raw) continue
     if (looksLikeUrl(raw)) return raw
+
+    if (raw.startsWith('/media/') || raw.startsWith('media/')) {
+      return resolveAssetUrl(raw)
+    }
 
     if (github) {
       if (raw.includes('github.com')) return raw.startsWith('http') ? raw : `https://${raw}`

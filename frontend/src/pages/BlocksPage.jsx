@@ -99,6 +99,22 @@ const BLOCK_PADDING_OPTIONS = [
   { value: 'lg', label: 'Large' }
 ]
 
+function extractBlocksFromRender(payload, sectionId) {
+  const sections = Array.isArray(payload?.sections) ? payload.sections : null
+  if (!sections) return null
+  const section = sections.find((item) => String(item?.id) === String(sectionId))
+  if (!section || !Array.isArray(section.blocks)) return []
+  return section.blocks
+}
+
+function extractElementsFromRender(payload, sectionId, blockId) {
+  const blocks = extractBlocksFromRender(payload, sectionId)
+  if (!Array.isArray(blocks)) return null
+  const block = blocks.find((item) => String(item?.id) === String(blockId))
+  if (!block || !Array.isArray(block.elements)) return []
+  return block.elements
+}
+
 export default function BlocksPage() {
   const { token } = useAuth()
   const { portfolioId, sectionId } = useParams()
@@ -130,6 +146,44 @@ export default function BlocksPage() {
   const [elementEditing, setElementEditing] = useState(null)
 
   const selected = useMemo(() => blocks.find((b) => b.id === selectedId) || null, [blocks, selectedId])
+
+  function applyRenderPayload(
+    payload,
+    {
+      preferredBlockId = null,
+      keepCurrentSelection = true,
+      clearElementError = false,
+    } = {}
+  ) {
+    const nextBlocks = extractBlocksFromRender(payload, sectionId)
+    if (!Array.isArray(nextBlocks)) return null
+
+    setBlocks(nextBlocks)
+
+    let nextSelectedId = null
+    if (preferredBlockId != null && nextBlocks.some((b) => b.id === preferredBlockId)) {
+      nextSelectedId = preferredBlockId
+    } else if (keepCurrentSelection && selectedId != null && nextBlocks.some((b) => b.id === selectedId)) {
+      nextSelectedId = selectedId
+    } else {
+      nextSelectedId = nextBlocks[0]?.id ?? null
+    }
+
+    setSelectedId(nextSelectedId)
+
+    if (nextSelectedId == null) {
+      setElements([])
+    } else {
+      const nextElements = extractElementsFromRender(payload, sectionId, nextSelectedId)
+      setElements(Array.isArray(nextElements) ? nextElements : [])
+    }
+
+    if (clearElementError) {
+      setElementsError(null)
+    }
+
+    return { nextBlocks, nextSelectedId }
+  }
 
   const jsonState = useMemo(() => {
     try {
@@ -324,12 +378,16 @@ export default function BlocksPage() {
     }
 
     if (elementModalMode === 'edit' && elementEditing?.id) {
-      await api.updateElement(token, portfolioId, sectionId, selected.id, elementEditing.id, payload)
-      await loadElements(selected.id)
+      const renderPayload = await api.updateElement(token, portfolioId, sectionId, selected.id, elementEditing.id, payload)
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await loadElements(selected.id)
+      }
       return
     }
-    await api.createElement(token, portfolioId, sectionId, selected.id, payload)
-    await loadElements(selected.id)
+    const renderPayload = await api.createElement(token, portfolioId, sectionId, selected.id, payload)
+    if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+      await loadElements(selected.id)
+    }
   }
 
   async function deleteElement(el) {
@@ -338,8 +396,10 @@ export default function BlocksPage() {
     if (!ok) return
     setElementsError(null)
     try {
-      await api.deleteElement(token, portfolioId, sectionId, selected.id, el.id)
-      await loadElements(selected.id)
+      const renderPayload = await api.deleteElement(token, portfolioId, sectionId, selected.id, el.id)
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await loadElements(selected.id)
+      }
     } catch (err) {
       setElementsError(err)
     }
@@ -349,8 +409,10 @@ export default function BlocksPage() {
     if (!selected?.id || !el?.id) return
     setElementsError(null)
     try {
-      await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { is_visible: !el.is_visible })
-      await loadElements(selected.id)
+      const renderPayload = await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { is_visible: !el.is_visible })
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await loadElements(selected.id)
+      }
     } catch (err) {
       setElementsError(err)
     }
@@ -363,8 +425,10 @@ export default function BlocksPage() {
 
     setElementsError(null)
     try {
-      await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { order: nextOrder })
-      await loadElements(selected.id)
+      const renderPayload = await api.updateElement(token, portfolioId, sectionId, selected.id, el.id, { order: nextOrder })
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await loadElements(selected.id)
+      }
     } catch (err) {
       setElementsError(err)
     }
@@ -375,13 +439,23 @@ export default function BlocksPage() {
     setCreating(true)
     setError(null)
     try {
+      const previousIds = new Set(blocks.map((item) => item.id))
       const payload = { type: createType }
       if (createOrder !== '') payload.order = Number(createOrder)
-      const created = await api.createBlock(token, portfolioId, sectionId, payload)
+      const renderPayload = await api.createBlock(token, portfolioId, sectionId, payload)
       setCreateOrder('')
       setCreateModalOpen(false)
-      await load()
-      if (created?.id) setSelectedId(created.id)
+
+      const applied = applyRenderPayload(renderPayload, { keepCurrentSelection: false, clearElementError: true })
+      if (!applied) {
+        await load()
+      } else {
+        const created = applied.nextBlocks.find((item) => !previousIds.has(item.id))
+        if (created?.id != null) {
+          setSelectedId(created.id)
+          setElements(Array.isArray(created.elements) ? created.elements : [])
+        }
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -401,8 +475,10 @@ export default function BlocksPage() {
       }
       if (draft.order !== '') payload.order = Number(draft.order)
 
-      await api.updateBlock(token, portfolioId, sectionId, selected.id, payload)
-      await load()
+      const renderPayload = await api.updateBlock(token, portfolioId, sectionId, selected.id, payload)
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -418,8 +494,10 @@ export default function BlocksPage() {
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteBlock(token, portfolioId, sectionId, selected.id)
-      await load()
+      const renderPayload = await api.deleteBlock(token, portfolioId, sectionId, selected.id)
+      if (!applyRenderPayload(renderPayload, { keepCurrentSelection: false, clearElementError: true })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -435,8 +513,10 @@ export default function BlocksPage() {
     setMoving(true)
     setError(null)
     try {
-      await api.updateBlock(token, portfolioId, sectionId, selected.id, { order: nextOrder })
-      await load()
+      const renderPayload = await api.updateBlock(token, portfolioId, sectionId, selected.id, { order: nextOrder })
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -449,8 +529,10 @@ export default function BlocksPage() {
     setTogglingVisible(true)
     setError(null)
     try {
-      await api.updateBlock(token, portfolioId, sectionId, selected.id, { is_visible: !selected.is_visible })
-      await load()
+      const renderPayload = await api.updateBlock(token, portfolioId, sectionId, selected.id, { is_visible: !selected.is_visible })
+      if (!applyRenderPayload(renderPayload, { preferredBlockId: selected.id, clearElementError: true })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {

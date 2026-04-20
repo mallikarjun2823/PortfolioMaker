@@ -26,6 +26,28 @@ from .ollama_client import OllamaClient
 service_logger = logging.getLogger("portfolio.service")
 
 
+class DomainException(Exception):
+    def __init__(self, message: str, *, status_code: int = 400):
+        super().__init__(str(message))
+        self.message = str(message)
+        self.status_code = int(status_code)
+
+
+class DomainValidationException(DomainException):
+    def __init__(self, message: str):
+        super().__init__(message, status_code=400)
+
+
+class DomainPermissionException(DomainException):
+    def __init__(self, message: str):
+        super().__init__(message, status_code=403)
+
+
+class DomainNotFoundException(DomainException):
+    def __init__(self, message: str):
+        super().__init__(message, status_code=404)
+
+
 OPERATOR_MAP = {
     "eq": "",
     "neq": "",
@@ -387,6 +409,39 @@ class PortfolioOverviewService:
             "experience": domain_data["experience"],
         }
 
+    def get_public_overview_by_slug(self, *, slug: str) -> Dict[str, Any]:
+        slug_value = str(slug or "").strip()
+        if not slug_value:
+            raise NotFound("Portfolio not found.")
+
+        portfolio = (
+            Portfolio.objects.select_related("theme")
+            .filter(slug=slug_value, is_published=True)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        if portfolio is None:
+            raise NotFound("Portfolio not found.")
+
+        domain_data = _serialize_portfolio_data(portfolio, visible_only=True)
+
+        return {
+            "portfolio": {
+                "id": portfolio.id,
+                "title": portfolio.title,
+                "slug": portfolio.slug,
+                "description": portfolio.description,
+                "resume": _serialize_value(portfolio.resume),
+                "theme": _serialize_theme_payload(portfolio.theme),
+                "is_published": portfolio.is_published,
+                "created_at": _serialize_value(portfolio.created_at),
+                "updated_at": _serialize_value(portfolio.updated_at),
+            },
+            "projects": domain_data["projects"],
+            "skills": domain_data["skills"],
+            "experience": domain_data["experience"],
+        }
+
 
 class PortfolioTemplateService:
     def list_templates(self) -> QuerySet[PortfolioTemplate]:
@@ -711,6 +766,43 @@ class PortfolioService:
             return Portfolio.objects.select_related("theme").get(id=portfolio_id, user=user)
         except Portfolio.DoesNotExist:
             raise NotFound("Portfolio not found.")
+
+    def _full_portfolio_qs(self) -> QuerySet[Portfolio]:
+        element_qs = Element.objects.order_by("order", "id")
+        block_qs = Block.objects.order_by("order", "id").prefetch_related(
+            Prefetch("elements", queryset=element_qs)
+        )
+        section_qs = Section.objects.order_by("order", "id").prefetch_related(
+            Prefetch("blocks", queryset=block_qs)
+        )
+
+        return Portfolio.objects.select_related("theme", "user").prefetch_related(
+            Prefetch("sections", queryset=section_qs)
+        )
+
+    def can_view_public(self, portfolio: Portfolio) -> bool:
+        return bool(getattr(portfolio, "is_published", False))
+
+    def get_full_portfolio(self, *, portfolio_id: int, user) -> Portfolio:
+        portfolio = self._full_portfolio_qs().filter(id=portfolio_id, user_id=user.id).first()
+        if portfolio is None:
+            raise DomainNotFoundException("Portfolio not found.")
+        return portfolio
+
+    def get_public_full_portfolio_by_slug(self, *, slug: str) -> Portfolio:
+        slug_value = str(slug or "").strip()
+        if not slug_value:
+            raise DomainNotFoundException("Portfolio not found.")
+
+        portfolio = (
+            self._full_portfolio_qs()
+            .filter(slug=slug_value)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        if portfolio is None or not self.can_view_public(portfolio):
+            raise DomainNotFoundException("Portfolio not found.")
+        return portfolio
 
     def _ensure_owner(self, *, user, portfolio: Portfolio) -> None:
         if portfolio.user_id != user.id:

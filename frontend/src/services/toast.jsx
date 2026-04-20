@@ -14,9 +14,40 @@ const DEFAULT_DURATION_MS = {
   info: 3600
 }
 
+function flattenErrorData(data) {
+  if (!data) return ''
+  if (typeof data === 'string') return data.trim()
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const value = flattenErrorData(item)
+      if (value) return value
+    }
+    return ''
+  }
+
+  if (typeof data === 'object') {
+    if (typeof data.error === 'string' && data.error.trim()) return data.error.trim()
+    if (typeof data.detail === 'string' && data.detail.trim()) return data.detail.trim()
+    if (typeof data.message === 'string' && data.message.trim()) return data.message.trim()
+
+    for (const [key, value] of Object.entries(data)) {
+      const nested = flattenErrorData(value)
+      if (!nested) continue
+      return key === 'detail' ? nested : `${key}: ${nested}`
+    }
+  }
+
+  return ''
+}
+
 export function toErrorMessage(error, fallback = 'Something went wrong.') {
   if (!error) return fallback
   if (typeof error === 'string') return error
+  const responseDataMessage = flattenErrorData(error?.response?.data)
+  if (responseDataMessage) return responseDataMessage
+  const dataMessage = flattenErrorData(error?.data)
+  if (dataMessage) return dataMessage
   if (typeof error.message === 'string' && error.message.trim()) return error.message
   return fallback
 }

@@ -20,6 +20,10 @@ function toKeyValueRows(obj) {
   return Object.entries(obj).map(([k, v], idx) => ({ sno: idx + 1, name: k, value: v }))
 }
 
+function extractSectionsFromRender(payload) {
+  return Array.isArray(payload?.sections) ? payload.sections : null
+}
+
 function KeyValueTable({ rows, emptyText = 'No values.' }) {
   const r = Array.isArray(rows) ? rows : []
   if (r.length === 0) return <div className="subtle">{emptyText}</div>
@@ -73,6 +77,28 @@ export default function SectionsPage() {
   const [togglingVisible, setTogglingVisible] = useState(false)
 
   const selected = useMemo(() => sections.find((s) => s.id === selectedId) || null, [sections, selectedId])
+
+  function applyRenderSections(payload, { preferredSelectionId = null, keepCurrentSelection = true } = {}) {
+    const nextSections = extractSectionsFromRender(payload)
+    if (!nextSections) return null
+
+    setSections(nextSections)
+
+    const hasPreferred = preferredSelectionId != null && nextSections.some((s) => s.id === preferredSelectionId)
+    if (hasPreferred) {
+      setSelectedId(preferredSelectionId)
+      return nextSections
+    }
+
+    const hasCurrent = keepCurrentSelection && selectedId != null && nextSections.some((s) => s.id === selectedId)
+    if (hasCurrent) {
+      setSelectedId(selectedId)
+      return nextSections
+    }
+
+    setSelectedId(nextSections[0]?.id ?? null)
+    return nextSections
+  }
 
   const jsonState = useMemo(() => {
     try {
@@ -137,14 +163,21 @@ export default function SectionsPage() {
     setCreating(true)
     setError(null)
     try {
+      const previousIds = new Set(sections.map((item) => item.id))
       const payload = { name: createName }
       if (createOrder !== '') payload.order = Number(createOrder)
-      const created = await api.createSection(token, portfolioId, payload)
+      const renderPayload = await api.createSection(token, portfolioId, payload)
       setCreateName('')
       setCreateOrder('')
       setCreateModalOpen(false)
-      await load()
-      if (created?.id) setSelectedId(created.id)
+
+      const nextSections = applyRenderSections(renderPayload, { keepCurrentSelection: false })
+      if (nextSections) {
+        const created = nextSections.find((item) => !previousIds.has(item.id))
+        if (created?.id != null) setSelectedId(created.id)
+      } else {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -164,8 +197,10 @@ export default function SectionsPage() {
       }
       if (draft.order !== '') payload.order = Number(draft.order)
 
-      await api.updateSection(token, portfolioId, selected.id, payload)
-      await load()
+      const renderPayload = await api.updateSection(token, portfolioId, selected.id, payload)
+      if (!applyRenderSections(renderPayload, { preferredSelectionId: selected.id })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -181,8 +216,14 @@ export default function SectionsPage() {
     setDeleting(true)
     setError(null)
     try {
-      await api.deleteSection(token, portfolioId, selected.id)
-      await load()
+      const deletedSectionId = selected.id
+      const renderPayload = await api.deleteSection(token, portfolioId, selected.id)
+      if (!applyRenderSections(renderPayload, { preferredSelectionId: null, keepCurrentSelection: false })) {
+        await load()
+      } else if (selectedId === deletedSectionId) {
+        const next = extractSectionsFromRender(renderPayload) || []
+        setSelectedId(next[0]?.id ?? null)
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -198,8 +239,10 @@ export default function SectionsPage() {
     setMoving(true)
     setError(null)
     try {
-      await api.updateSection(token, portfolioId, selected.id, { order: nextOrder })
-      await load()
+      const renderPayload = await api.updateSection(token, portfolioId, selected.id, { order: nextOrder })
+      if (!applyRenderSections(renderPayload, { preferredSelectionId: selected.id })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -212,8 +255,10 @@ export default function SectionsPage() {
     setTogglingVisible(true)
     setError(null)
     try {
-      await api.updateSection(token, portfolioId, selected.id, { is_visible: !selected.is_visible })
-      await load()
+      const renderPayload = await api.updateSection(token, portfolioId, selected.id, { is_visible: !selected.is_visible })
+      if (!applyRenderSections(renderPayload, { preferredSelectionId: selected.id })) {
+        await load()
+      }
     } catch (err) {
       setError(err)
     } finally {

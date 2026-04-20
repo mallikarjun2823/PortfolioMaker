@@ -16,6 +16,7 @@ import BlocksPage from './pages/BlocksPage.jsx'
 import PortfolioOverviewPage from './pages/PortfolioOverviewPage.jsx'
 import BuildPortfolioPage from './pages/BuildPortfolioPage.jsx'
 import PortfolioRenderPage from './pages/PortfolioRenderPage.jsx'
+import PortfolioDraftPreviewPage from './pages/PortfolioDraftPreviewPage.jsx'
 
 function Protected({ children }) {
   const { token, loading } = useAuth()
@@ -74,6 +75,7 @@ export default function App() {
 
         <Route path="portfolios/:portfolioId" element={<PortfolioOverviewPage />} />
         <Route path="portfolios/:portfolioId/build" element={<BuildPortfolioPage />} />
+        <Route path="portfolios/:portfolioId/preview" element={<PortfolioDraftPreviewPage />} />
         <Route path="portfolios/:portfolioId/projects" element={<ProjectsPage />} />
         <Route path="portfolios/:portfolioId/skills" element={<SkillsPage />} />
         <Route path="portfolios/:portfolioId/experiences" element={<ExperiencesPage />} />

@@ -62,7 +62,8 @@ export default function BlockRenderer({ block, index = 0 }) {
 
   const type = String(block.type || '').toUpperCase()
   const items = asArray(block.items)
-  if (items.length === 0) return null
+  const elements = asArray(block.elements)
+  if (items.length === 0 && elements.length === 0) return null
 
   const config = block.config && typeof block.config === 'object' ? block.config : {}
   const explicitHeading = pickText(config, ['title', 'heading', 'label'])
@@ -97,7 +98,16 @@ export default function BlockRenderer({ block, index = 0 }) {
         {shouldShowHeading ? <h3 className="pfBlockHeading" style={headingStyle}>{heading}</h3> : null}
 
         <div className="pfBlockBody">
-          {type === 'GRID' ? (
+          {items.length === 0 ? (
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 8 }}>
+              {elements.map((element) => (
+                <li key={element.id || `${element.data_source}-${element.field}-${element.order}`}>
+                  <strong>{element.label || `${element.data_source}.${element.field}`}</strong>
+                  <span style={{ opacity: 0.8 }}> - {String(element.data_source || '').toUpperCase()}.{element.field}</span>
+                </li>
+              ))}
+            </ul>
+          ) : type === 'GRID' ? (
             <GridBlock items={items} />
           ) : type === 'TIMELINE' ? (
             <TimelineBlock items={items} />

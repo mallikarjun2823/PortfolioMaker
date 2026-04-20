@@ -64,6 +64,87 @@ class PortfolioResponseSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+
+class RenderElementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Element
+        fields = [
+            "id",
+            "label",
+            "data_source",
+            "field",
+            "order",
+            "is_visible",
+            "config",
+        ]
+        read_only_fields = fields
+
+
+class RenderBlockSerializer(serializers.ModelSerializer):
+    elements = RenderElementSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Block
+        fields = [
+            "id",
+            "type",
+            "order",
+            "is_visible",
+            "config",
+            "elements",
+        ]
+        read_only_fields = fields
+
+
+class RenderSectionSerializer(serializers.ModelSerializer):
+    type = serializers.SerializerMethodField()
+    blocks = RenderBlockSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Section
+        fields = [
+            "id",
+            "name",
+            "type",
+            "order",
+            "is_visible",
+            "config",
+            "blocks",
+        ]
+        read_only_fields = fields
+
+    def get_type(self, obj):
+        config = obj.config if isinstance(obj.config, dict) else {}
+        value = config.get("type")
+        if value is not None and str(value).strip():
+            return str(value)
+        return str(obj.name or "").strip().upper().replace(" ", "_")
+
+
+class RenderThemeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Theme
+        fields = ["id", "name", "config"]
+        read_only_fields = fields
+
+
+class PortfolioRenderSerializer(serializers.ModelSerializer):
+    sections = RenderSectionSerializer(many=True, read_only=True)
+    theme = RenderThemeSerializer(read_only=True)
+
+    class Meta:
+        model = Portfolio
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "description",
+            "is_published",
+            "theme",
+            "sections",
+        ]
+        read_only_fields = fields
+
 class PortfolioCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Portfolio

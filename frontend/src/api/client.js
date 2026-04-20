@@ -26,6 +26,37 @@ function getApiOrigin() {
   return window.location.origin
 }
 
+function flattenErrorData(data) {
+  if (!data) return ''
+
+  if (typeof data === 'string') {
+    const value = data.trim()
+    return value
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const value = flattenErrorData(item)
+      if (value) return value
+    }
+    return ''
+  }
+
+  if (typeof data === 'object') {
+    if (typeof data.error === 'string' && data.error.trim()) return data.error.trim()
+    if (typeof data.detail === 'string' && data.detail.trim()) return data.detail.trim()
+    if (typeof data.message === 'string' && data.message.trim()) return data.message.trim()
+
+    for (const [key, value] of Object.entries(data)) {
+      const nested = flattenErrorData(value)
+      if (!nested) continue
+      return key === 'detail' ? nested : `${key}: ${nested}`
+    }
+  }
+
+  return ''
+}
+
 export function resolveAssetUrl(value) {
   if (!value) return ''
   const raw = String(value).trim()
@@ -45,8 +76,8 @@ async function parseJsonSafe(res) {
 }
 
 function getErrorMessage(status, data) {
-  const detail = data && (data.detail || data.message)
-  if (typeof detail === 'string' && detail.trim()) return detail
+  const extracted = flattenErrorData(data)
+  if (extracted) return extracted
   if (status === 401) return 'Please login again.'
   if (status === 403) return 'You do not have permission to perform this action.'
   if (status >= 500) return 'Server error. Please try again later.'
@@ -59,6 +90,7 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
     this.data = data
+    this.response = { status, data }
   }
 }
 
@@ -100,7 +132,15 @@ export async function apiRequest(path, { method = 'GET', token, body, headers } 
 const listThemePresets = (token) => apiRequest('/themes/', { token })
 const getPortfolioRender = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/render/`, { token })
 const getPublicPortfolioRenderBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/render/`)
+const getPublicPortfolioOverviewBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/overview/`)
 const getPortfolioOverview = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/overview/`, { token })
+const listTemplates = (token) => apiRequest('/templates/', { token })
+const applyPortfolioTemplate = (token, portfolioId, templateId) =>
+  apiRequest(`/portfolios/${portfolioId}/apply-template/`, {
+    method: 'POST',
+    token,
+    body: { template_id: Number(templateId) }
+  })
 const importPortfolioFromResume = (token, portfolioId, payload) =>
   apiRequest(`/portfolios/${portfolioId}/import-resume/`, { method: 'POST', token, body: payload })
 const getResumeUploadStatus = (token, uploadId) => apiRequest(`/resume-uploads/${uploadId}/status/`, { token })
@@ -121,6 +161,8 @@ export const api = {
   createPortfolio: (token, payload) => apiRequest('/portfolios/', { method: 'POST', token, body: payload }),
   getPortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { token }),
   getPortfolioOverview,
+  listTemplates,
+  applyPortfolioTemplate,
   importPortfolioFromResume,
   getResumeUploadStatus,
   getPortfolioResumeDraft,
@@ -132,6 +174,7 @@ export const api = {
   // render
   getPortfolioRender,
   getPublicPortfolioRenderBySlug,
+  getPublicPortfolioOverviewBySlug,
 
   // children
   listProjects: (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/projects/`, { token }),
