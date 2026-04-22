@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'portfolio',
     'rest_framework',
     'corsheaders',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -197,6 +198,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 SIMPLE_JWT = {
@@ -243,4 +245,10 @@ LOGGING = {
             "propagate": False,
         },
     },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Portfolio API',
+    'DESCRIPTION': 'Backend-driven portfolio system',
+    'VERSION': '1.0.0',
 }
