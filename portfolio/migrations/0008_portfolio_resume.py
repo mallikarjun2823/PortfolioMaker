@@ -1,8 +1,18 @@
+"""Auto-generated module docstring for portfolio\migrations\0008_portfolio_resume.py.
+
+This docstring was added by scripts/add_docstrings.py.
+"""
+
 from django.db import migrations, models
 import portfolio.models
 
 
 class Migration(migrations.Migration):
+    """Auto-generated docstring for class Migration.
+
+    Returns:
+        Description.
+    """
 
     dependencies = [
         ("portfolio", "0007_seed_theme_presets"),

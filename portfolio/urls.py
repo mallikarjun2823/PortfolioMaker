@@ -1,3 +1,9 @@
+"""URL patterns for the `portfolio` Django application.
+
+Defines the REST API endpoints exposed by the `portfolio` app. These
+patterns are included by the project-level URL configuration.
+"""
+
 from django.urls import path
 
 from . import views

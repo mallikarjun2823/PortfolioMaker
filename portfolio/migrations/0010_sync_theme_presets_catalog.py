@@ -1,3 +1,8 @@
+"""Auto-generated module docstring for portfolio\migrations\0010_sync_theme_presets_catalog.py.
+
+This docstring was added by scripts/add_docstrings.py.
+"""
+
 from django.db import migrations
 
 
@@ -104,6 +109,15 @@ PRESETS = [
 ]
 
 
+    """Auto-generated docstring for function seed_catalog.
+
+    Args:
+        apps: Description.
+        schema_editor: Description.
+
+    Returns:
+        Description.
+    """
 def seed_catalog(apps, schema_editor):
     Theme = apps.get_model("portfolio", "Theme")
 
@@ -118,11 +132,25 @@ def seed_catalog(apps, schema_editor):
         )
 
 
+    """Auto-generated docstring for function noop_reverse.
+
+    Args:
+        apps: Description.
+        schema_editor: Description.
+
+    Returns:
+        Description.
+    """
 def noop_reverse(apps, schema_editor):
     pass
 
 
 class Migration(migrations.Migration):
+    """Auto-generated docstring for class Migration.
+
+    Returns:
+        Description.
+    """
 
     dependencies = [
         ("portfolio", "0009_alter_element_field"),

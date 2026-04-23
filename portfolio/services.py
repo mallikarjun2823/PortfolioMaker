@@ -1,3 +1,14 @@
+"""Service layer for the ``portfolio`` app.
+
+This module implements business logic used by the REST API and admin tasks
+for portfolios: rendering public/private payloads, managing portfolio
+aggregate operations (create/update/delete), and child services for sections,
+blocks, elements, projects, skills and experiences. Helper utilities for
+serializing values and applying element filters are included.
+
+Docstrings follow the Google style.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -37,12 +48,34 @@ OPERATOR_MAP = {
 
 
 def _safe_config(config: Any) -> Dict[str, Any]:
+    """Return a dict when ``config`` is a mapping, otherwise an empty dict.
+
+    Args:
+        config: Configuration value which may be a dict or other type.
+
+    Returns:
+        dict: The provided config if it is a dict, otherwise an empty dict.
+    """
     if isinstance(config, dict):
         return config
     return {}
 
 
 def _serialize_value(value: Any) -> Any:
+    """Serialize model field values to JSON-friendly representations.
+
+    Handles common Django field types and native Python types:
+    - ``FieldFile``: returns URL when available, otherwise string representation.
+    - ``datetime``, ``date``, ``time``: converted to ISO 8601 strings.
+    - basic scalar and container types are returned unchanged.
+    - all other objects are converted with ``str()``.
+
+    Args:
+        value: The value to serialize.
+
+    Returns:
+        A JSON-serializable representation of ``value``.
+    """
     if isinstance(value, FieldFile):
         if not value:
             return None
@@ -61,6 +94,16 @@ def _serialize_value(value: Any) -> Any:
 
 
 def _get_queryset(portfolio: Portfolio, data_source: str, *, include_unpublished: bool = False) -> QuerySet:
+    """Return a QuerySet for the requested ``data_source`` scoped to ``portfolio``.
+
+    Args:
+        portfolio: Portfolio instance used to scope queries.
+        data_source: One of the values in :class:`Element.DataSource`.
+        include_unpublished: If True, include unpublished portfolio records.
+
+    Returns:
+        Django QuerySet for the requested source; empty QuerySet on unknown source.
+    """
     if data_source == Element.DataSource.PROJECT:
         return Project.objects.filter(portfolio=portfolio, is_visible=True)
 
@@ -80,12 +123,35 @@ def _get_queryset(portfolio: Portfolio, data_source: str, *, include_unpublished
 
 
 def _normalize_filters(filters: Any) -> List[Dict[str, Any]]:
+    """Normalize a filters value into a list of dict filter descriptors.
+
+    If ``filters`` is not a list, or contains non-dict entries, those entries
+    are discarded.
+
+    Args:
+        filters: Raw filters value from element config.
+
+    Returns:
+        A list of dicts suitable for :func:`_apply_filters`.
+    """
     if not isinstance(filters, list):
         return []
     return [f for f in filters if isinstance(f, dict)]
 
 
 def _apply_filters(queryset: QuerySet, filters: Sequence[Dict[str, Any]]) -> QuerySet:
+    """Apply a sequence of filter descriptors to a QuerySet.
+
+    Each filter descriptor is a dict with keys: ``key``, ``operator``, and
+    ``value``. Supported operators are mapped in :data:`OPERATOR_MAP`.
+
+    Args:
+        queryset: The Django QuerySet to filter.
+        filters: Sequence of filter descriptor dicts.
+
+    Returns:
+        The filtered QuerySet.
+    """
     for filter_item in filters:
         key = filter_item.get("key")
         operator = str(filter_item.get("operator", "eq")).lower()
@@ -119,6 +185,17 @@ def _apply_filters(queryset: QuerySet, filters: Sequence[Dict[str, Any]]) -> Que
 
 
 def _filters_cache_key(filters: Sequence[Dict[str, Any]]) -> tuple:
+    """Create a hashable cache key tuple from a sequence of filter dicts.
+
+    This function normalizes list/dict values into tuples so the resulting
+    structure is hashable and can be used as a cache key.
+
+    Args:
+        filters: Sequence of filter dicts.
+
+    Returns:
+        A tuple suitable for use as a cache key.
+    """
     normalized: List[tuple] = []
     for item in filters:
         if not isinstance(item, dict):
@@ -144,6 +221,23 @@ def _resolve_block_items(
     *,
     include_unpublished: bool = False,
 ) -> List[Dict[str, Any]]:
+    """Resolve rows of data for a block from its elements.
+
+    For each element, the corresponding records are fetched from the
+    appropriate model (project, skill, experience, or portfolio), element
+    filters are applied, and the results are assembled into row dictionaries
+    keyed by element label. Rows are aligned by record index; if sources have
+    different lengths the shorter ones will produce ``None`` values for the
+    missing rows.
+
+    Args:
+        portfolio: Portfolio used for scoping element queries.
+        elements: Iterable of :class:`Element` instances for the block.
+        include_unpublished: If True, include unpublished portfolio records.
+
+    Returns:
+        A list of dictionaries representing rows for the block.
+    """
     element_data: List[tuple[Element, List[Any]]] = []
     max_rows = 0
 
@@ -180,6 +274,19 @@ def _resolve_block_items(
 
 
 def _fetch_blocks(section: Section, *, include_unpublished: bool = False) -> List[Dict[str, Any]]:
+    """Fetch and render visible blocks for a section.
+
+    The rendered representation contains the block type, its safe config and
+    the resolved items for each block.
+
+    Args:
+        section: Section instance to fetch blocks for.
+        include_unpublished: If True, include unpublished portfolio records
+            when resolving element data.
+
+    Returns:
+        A list of rendered block dictionaries.
+    """
     visible_elements = Prefetch(
         "elements",
         queryset=Element.objects.filter(is_visible=True).order_by("order", "id"),
@@ -209,6 +316,16 @@ def _fetch_blocks(section: Section, *, include_unpublished: bool = False) -> Lis
 
 
 def _fetch_sections(portfolio: Portfolio, *, include_unpublished: bool = False) -> List[Dict[str, Any]]:
+    """Return rendered sections (with blocks) for a portfolio.
+
+    Args:
+        portfolio: Portfolio instance to fetch sections for.
+        include_unpublished: If True, include unpublished portfolio records
+            when resolving element data.
+
+    Returns:
+        A list of section dictionaries, each containing its rendered blocks.
+    """
     sections = Section.objects.filter(portfolio=portfolio, is_visible=True).order_by("order", "id")
 
     return [
@@ -222,7 +339,23 @@ def _fetch_sections(portfolio: Portfolio, *, include_unpublished: bool = False) 
 
 
 class PortfolioRenderService:
+    """Service responsible for producing the JSON-serializable portfolio payload.
+
+    This class encapsulates the rendering logic for both private (authenticated)
+    and public portfolio representations.
+    """
+
     def _serialize_payload(self, *, portfolio: Portfolio, include_unpublished: bool) -> Dict[str, Any]:
+        """Serialize a Portfolio instance into a nested data payload.
+
+        Args:
+            portfolio: The Portfolio instance to serialize.
+            include_unpublished: Whether to include unpublished child records
+                when resolving element data.
+
+        Returns:
+            A dictionary representing the portfolio, suitable for JSON response.
+        """
         theme_data = None
         if portfolio.theme is not None:
             theme_data = {
@@ -248,6 +381,19 @@ class PortfolioRenderService:
         *,
         include_unpublished: bool = False,
     ) -> Dict[str, Any]:
+        """Render a portfolio owned by ``user_id``.
+
+        Args:
+            portfolio_id: ID of the portfolio to render.
+            user_id: ID of the owning user.
+            include_unpublished: If True, include unpublished children in payload.
+
+        Raises:
+            rest_framework.exceptions.NotFound: If the portfolio does not exist.
+
+        Returns:
+            Serialized portfolio payload as a dict.
+        """
         qs = Portfolio.objects.select_related("theme", "user").filter(id=portfolio_id, user_id=user_id)
         if not include_unpublished:
             qs = qs.filter(is_published=True)
@@ -259,6 +405,17 @@ class PortfolioRenderService:
         return self._serialize_payload(portfolio=portfolio, include_unpublished=include_unpublished)
 
     def render_public_portfolio_by_slug(self, slug: str) -> Dict[str, Any]:
+        """Render a public portfolio identified by ``slug``.
+
+        Args:
+            slug: Public slug string to look up.
+
+        Raises:
+            rest_framework.exceptions.NotFound: If no published portfolio matches.
+
+        Returns:
+            Serialized portfolio payload as a dict.
+        """
         slug_value = str(slug or "").strip()
         if not slug_value:
             raise NotFound("Portfolio not found")
@@ -276,22 +433,71 @@ class PortfolioRenderService:
 
 
 class PortfolioService:
+    """Service for creating, updating and deleting portfolio aggregates.
+
+    This class contains validation, slug generation and publish-time checks
+    for Portfolio entities.
+    """
+
     _ALLOWED_FIELDS = {"title", "slug", "description", "resume", "theme", "is_published"}
 
     def list(self, *, user) -> QuerySet[Portfolio]:
+        """List portfolios owned by ``user``.
+
+        Args:
+            user: The user whose portfolios should be returned.
+
+        Returns:
+            QuerySet of :class:`Portfolio` ordered by creation time.
+        """
         return Portfolio.objects.filter(user=user).select_related("theme").order_by("-created_at", "-id")
 
     def retrieve(self, *, user, portfolio_id: int) -> Portfolio:
+        """Retrieve a portfolio by id for a given user.
+
+        Args:
+            user: Owner of the portfolio.
+            portfolio_id: ID of the portfolio to retrieve.
+
+        Raises:
+            rest_framework.exceptions.NotFound: If not found.
+
+        Returns:
+            The :class:`Portfolio` instance.
+        """
         try:
             return Portfolio.objects.select_related("theme").get(id=portfolio_id, user=user)
         except Portfolio.DoesNotExist:
             raise NotFound("Portfolio not found.")
 
     def _ensure_owner(self, *, user, portfolio: Portfolio) -> None:
+        """Raise ``PermissionDenied`` when ``user`` is not the portfolio owner.
+
+        Args:
+            user: The requesting user.
+            portfolio: Portfolio instance being accessed.
+
+        Raises:
+            rest_framework.exceptions.PermissionDenied: If the user is not the owner.
+        """
         if portfolio.user_id != user.id:
             raise PermissionDenied("You do not have permission to access this portfolio.")
 
     def _coerce_bool(self, value: Any, *, default: bool = False) -> bool:
+        """Coerce common truthy/falsy representations into a boolean.
+
+        Accepts booleans, numeric and string values ("true", "1", "yes", etc.).
+
+        Args:
+            value: Value to coerce.
+            default: Default boolean to return when ``value`` is ``None``.
+
+        Returns:
+            bool: Coerced boolean value.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If the value cannot be parsed.
+        """
         if value is None:
             return default
         if isinstance(value, bool):
@@ -307,10 +513,26 @@ class PortfolioService:
         raise ValidationError({"is_published": "Invalid boolean value."})
 
     def _slug_max_length(self) -> int:
+        """Return the configured max_length for the Portfolio.slug field.
+
+        Returns:
+            int: Maximum length (fallback 50).
+        """
         field = Portfolio._meta.get_field("slug")
         return int(getattr(field, "max_length", 50) or 50)
 
     def _normalize_title(self, value: Any) -> str:
+        """Normalize and validate a portfolio title.
+
+        Args:
+            value: Title value to normalize.
+
+        Returns:
+            The normalized title string.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If the title is empty.
+        """
         title = "" if value is None else str(value)
         title = title.strip()
         if not title:
@@ -318,12 +540,39 @@ class PortfolioService:
         return title
 
     def _normalize_slug_source(self, value: Any) -> str:
+        """Normalize a slug source string and apply ``slugify``.
+
+        Strips leading/trailing dashes from the slug.
+
+        Args:
+            value: Raw slug source value.
+
+        Returns:
+            Normalized slug string.
+        """
         slug = "" if value is None else str(value)
         slug = slug.strip()
         slug = slugify(slug)
         return slug.strip("-")
 
     def _make_unique_slug(self, *, user, base_slug: str, exclude_portfolio_id: int | None = None) -> str:
+        """Generate a user-scoped unique slug based on ``base_slug``.
+
+        If the candidate slug already exists for the user, a numeric suffix is
+        appended to make it unique while respecting the field max length.
+
+        Args:
+            user: The owner user used to scope uniqueness checks.
+            base_slug: The normalized base slug to start from.
+            exclude_portfolio_id: Optional portfolio id to exclude from checks
+                (useful when updating an existing portfolio).
+
+        Returns:
+            A unique slug string for the user.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If the base_slug is empty.
+        """
         max_len = self._slug_max_length()
         base_slug = (base_slug or "").strip("-")[:max_len].strip("-")
         if not base_slug:
@@ -344,6 +593,19 @@ class PortfolioService:
         return candidate
 
     def _resolve_theme(self, value: Any) -> Theme | None:
+        """Resolve a theme reference to a :class:`Theme` instance.
+
+        Accepts a Theme instance, an integer id, or ``None``/empty string.
+
+        Args:
+            value: Theme id or :class:`Theme` instance.
+
+        Returns:
+            Theme or None.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: On invalid references.
+        """
         if value is None or value == "":
             return None
 
@@ -361,6 +623,14 @@ class PortfolioService:
             raise ValidationError({"theme": "Theme not found."})
 
     def _assert_publishable(self, portfolio: Portfolio) -> None:
+        """Validate that a portfolio can be published.
+
+        A publishable portfolio must be persisted and contain at least one
+        visible section and at least one block.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If the portfolio is not publishable.
+        """
         if portfolio.pk is None:
             raise ValidationError(
                 {
@@ -379,6 +649,14 @@ class PortfolioService:
             )
 
     def _reject_unknown_fields(self, payload: Any) -> None:
+        """Reject unexpected keys in payloads.
+
+        Args:
+            payload: A mapping-like object containing candidate fields.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If unknown fields are present.
+        """
         keys = set(getattr(payload, "keys", lambda: [])())
         unknown = keys - self._ALLOWED_FIELDS
         if unknown:
@@ -386,6 +664,17 @@ class PortfolioService:
 
     @transaction.atomic
     def create(self, *, user, validated_data: Dict[str, Any]) -> Portfolio:
+        """Create a new Portfolio aggregate.
+
+        Performs validation, slug normalization, and optional publish checks.
+
+        Args:
+            user: Owner of the new portfolio.
+            validated_data: Dict of validated input fields.
+
+        Returns:
+            The created :class:`Portfolio` instance.
+        """
         service_logger.info(
             "portfolio.create user_id=%s keys=%s",
             getattr(user, "id", None),
@@ -444,6 +733,16 @@ class PortfolioService:
 
     @transaction.atomic
     def update(self, *, user, instance: Portfolio, validated_data: Dict[str, Any]) -> Portfolio:
+        """Update a Portfolio aggregate with validated data.
+
+        Args:
+            user: Requesting user (must be owner).
+            instance: Portfolio instance to update.
+            validated_data: Dict of validated updates.
+
+        Returns:
+            Updated :class:`Portfolio` instance.
+        """
         service_logger.info(
             "portfolio.update user_id=%s portfolio_id=%s keys=%s",
             getattr(user, "id", None),
@@ -501,6 +800,12 @@ class PortfolioService:
 
     @transaction.atomic
     def delete(self, *, user, instance: Portfolio) -> None:
+        """Delete a portfolio after ensuring the requester is the owner.
+
+        Args:
+            user: Requesting user.
+            instance: Portfolio to delete.
+        """
         service_logger.info(
             "portfolio.delete user_id=%s portfolio_id=%s",
             getattr(user, "id", None),
@@ -511,6 +816,13 @@ class PortfolioService:
 
 
 class BasePortfolioChildService:
+    """Base helper for services that manage portfolio-scoped child models.
+
+    Provides common ordering, creation and update patterns used by
+    :class:`ProjectService`, :class:`SkillService`, :class:`ExperienceService`,
+    :class:`SectionService`, :class:`BlockService` and :class:`ElementService`.
+    """
+
     model = None
     allowed_fields: set[str] = set()
     not_found_message = "Object not found."
@@ -519,6 +831,19 @@ class BasePortfolioChildService:
     ownership_error_message = "Object does not belong to this portfolio."
 
     def _resolve_portfolio(self, *, portfolio_id: int, user, for_update: bool = False) -> Portfolio:
+        """Resolve a portfolio for owner-scoped operations.
+
+        Args:
+            portfolio_id: Portfolio id to resolve.
+            user: Requesting user.
+            for_update: If True, use ``select_for_update`` to lock rows.
+
+        Raises:
+            rest_framework.exceptions.NotFound: If portfolio is not found.
+
+        Returns:
+            The resolved :class:`Portfolio` instance.
+        """
         qs = Portfolio.objects
         if for_update:
             qs = qs.select_for_update()
@@ -530,6 +855,20 @@ class BasePortfolioChildService:
         return portfolio
 
     def _resolve_instance(self, *, portfolio_id: int, object_id: int, user, for_update: bool = False):
+        """Resolve a child instance belonging to a portfolio.
+
+        Args:
+            portfolio_id: Owning portfolio id.
+            object_id: The child's id.
+            user: Requesting user.
+            for_update: Use ``select_for_update`` when True.
+
+        Raises:
+            rest_framework.exceptions.NotFound: If the object does not exist.
+
+        Returns:
+            The model instance.
+        """
         qs = self.model.objects.select_related("portfolio")
         if for_update:
             qs = qs.select_for_update()
@@ -540,15 +879,28 @@ class BasePortfolioChildService:
             raise NotFound(self.not_found_message)
 
     def _reject_unknown_fields(self, validated_data: Any) -> None:
+        """Reject unknown payload keys based on ``allowed_fields``.
+
+        Args:
+            validated_data: Mapping-like object of payload fields.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: If unknown keys exist.
+        """
         keys = set(getattr(validated_data, "keys", lambda: [])())
         unknown = keys - self.allowed_fields
         if unknown:
             raise ValidationError({key: "Unknown field." for key in sorted(unknown)})
 
     def _get_queryset(self, portfolio: Portfolio) -> QuerySet:
+        """Return a QuerySet for this service's ``model`` scoped to ``portfolio``."""
         return self.model.objects.filter(portfolio=portfolio)
 
     def _coerce_order(self, value: Any) -> int:
+        """Coerce and validate an order value to a positive integer.
+
+        Raises ValidationError for invalid or missing values.
+        """
         if value is None:
             raise ValidationError({"order": "Order cannot be null."})
 
@@ -560,6 +912,7 @@ class BasePortfolioChildService:
         return max(1, order)
 
     def _lock_siblings(self, *, portfolio: Portfolio) -> List[Any]:
+        """Lock and return sibling instances ordered by order,id for mutation."""
         return list(
             self._get_queryset(portfolio)
             .select_for_update()
@@ -567,6 +920,10 @@ class BasePortfolioChildService:
         )
 
     def _resequence_orders(self, *, siblings: List[Any]) -> None:
+        """Normalize ordering to a contiguous 1..n sequence.
+
+        Bulk-updates any changed order values.
+        """
         changed: List[Any] = []
         expected = 1
         for instance in siblings:
@@ -579,6 +936,7 @@ class BasePortfolioChildService:
             self.model.objects.bulk_update(changed, ["order"])
 
     def _with_auto_order(self, *, portfolio: Portfolio, validated_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a payload that fills an ``order`` if missing based on siblings."""
         payload = dict(validated_data)
         if "order" not in payload or payload.get("order") is None:
             last_order = (
@@ -721,6 +1079,8 @@ class BasePortfolioChildService:
 
 
 class SectionService:
+    """Service managing portfolio sections and their ordering."""
+
     allowed_fields = {"name", "order", "is_visible", "config"}
     not_found_message = "Section not found."
     create_error_message = "Could not create section."
@@ -1023,6 +1383,8 @@ class SectionService:
 
 
 class BlockService:
+    """Service managing blocks within a section."""
+
     allowed_fields = {"type", "order", "is_visible", "config"}
     not_found_message = "Block not found."
     create_error_message = "Could not create block."
@@ -1287,6 +1649,8 @@ class BlockService:
 
 
 class ElementService:
+    """Service for managing elements (field mappings) for blocks."""
+
     allowed_fields = {"label", "data_source", "field", "order", "is_visible", "config"}
     not_found_message = "Element not found."
     create_error_message = "Could not create element."
@@ -1634,7 +1998,22 @@ class ExperienceService(BasePortfolioChildService):
 
 
 class AuthService:
+    """Authentication helper used by the API (register/login)."""
+
     def register(self, *, username: str, password: str, email: str | None = None) -> Dict[str, str]:
+        """Create a new user and return JWT tokens.
+
+        Args:
+            username: Desired username.
+            password: Plain-text password to validate and store.
+            email: Optional email address.
+
+        Returns:
+            Dict with keys ``refresh`` and ``access`` containing JWT tokens.
+
+        Raises:
+            rest_framework.exceptions.ValidationError: On validation or uniqueness errors.
+        """
         User = get_user_model()
 
         normalized_email = (email or "").strip() or None
@@ -1659,6 +2038,18 @@ class AuthService:
         return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
     def login(self, *, username: str, password: str) -> Dict[str, str]:
+        """Authenticate a user and return JWT tokens.
+
+        Args:
+            username: Username to authenticate.
+            password: Password to authenticate.
+
+        Returns:
+            Dict with keys ``refresh`` and ``access`` containing JWT tokens.
+
+        Raises:
+            rest_framework.exceptions.AuthenticationFailed: On invalid credentials or disabled account.
+        """
         user = authenticate(username=username, password=password)
         if user is None:
             raise AuthenticationFailed("Invalid username or password")

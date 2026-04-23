@@ -22,6 +22,15 @@ LOG_DIR.mkdir(exist_ok=True)
 
 
 def env_bool(name, default=False):
+    """Auto-generated docstring for function env_bool.
+
+    Args:
+        name: Description.
+        default: Description.
+
+    Returns:
+        Description.
+    """
     value = os.getenv(name)
     if value is None:
         return default
@@ -29,6 +38,15 @@ def env_bool(name, default=False):
 
 
 def env_list(name, default=None):
+    """Auto-generated docstring for function env_list.
+
+    Args:
+        name: Description.
+        default: Description.
+
+    Returns:
+        Description.
+    """
     value = os.getenv(name)
     if value is None or not value.strip():
         return list(default or [])
@@ -36,6 +54,15 @@ def env_list(name, default=None):
 
 
 def env_int(name, default=0):
+    """Auto-generated docstring for function env_int.
+
+    Args:
+        name: Description.
+        default: Description.
+
+    Returns:
+        Description.
+    """
     value = os.getenv(name)
     if value is None or not value.strip():
         return default

@@ -1,3 +1,8 @@
+"""Auto-generated module docstring for portfolio_maker\middleware.py.
+
+This docstring was added by scripts/add_docstrings.py.
+"""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +29,14 @@ _SENSITIVE_KEYS = {
 }
 
 
+    """Auto-generated docstring for function _redact.
+
+    Args:
+        value: Description.
+
+    Returns:
+        Description.
+    """
 def _redact(value: Any) -> Any:
     if isinstance(value, dict):
         redacted: dict[str, Any] = {}
@@ -41,6 +54,14 @@ def _redact(value: Any) -> Any:
     return value
 
 
+    """Auto-generated docstring for function _safe_json_loads.
+
+    Args:
+        raw: Description.
+
+    Returns:
+        Description.
+    """
 def _safe_json_loads(raw: bytes) -> Any | None:
     if not raw:
         return None
@@ -50,6 +71,14 @@ def _safe_json_loads(raw: bytes) -> Any | None:
         return None
 
 
+    """Auto-generated docstring for function _get_request_payload.
+
+    Args:
+        request: Description.
+
+    Returns:
+        Description.
+    """
 def _get_request_payload(request: HttpRequest) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "method": request.method,
@@ -96,10 +125,33 @@ def _get_request_payload(request: HttpRequest) -> dict[str, Any]:
     return payload
 
 
+    """Auto-generated docstring for class RequestLoggingMiddleware.
+
+    Returns:
+        Description.
+    """
 class RequestLoggingMiddleware:
+        """Auto-generated docstring for function __init__.
+
+        Args:
+            self: Description.
+            get_response: Description.
+
+        Returns:
+            Description.
+        """
     def __init__(self, get_response):
         self.get_response = get_response
 
+        """Auto-generated docstring for function __call__.
+
+        Args:
+            self: Description.
+            request: Description.
+
+        Returns:
+            Description.
+        """
     def __call__(self, request: HttpRequest) -> HttpResponse:
         start = time.perf_counter()
         try:

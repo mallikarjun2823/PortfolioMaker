@@ -1,3 +1,8 @@
+"""Auto-generated module docstring for portfolio\management\commands\seed_portfolio.py.
+
+This docstring was added by scripts/add_docstrings.py.
+"""
+
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -20,6 +25,11 @@ from portfolio.models import (
 from portfolio.theme_presets import THEME_PRESETS
 
 
+    """Auto-generated docstring for class Command.
+
+    Returns:
+        Description.
+    """
 class Command(BaseCommand):
     help = "Seed realistic dummy data for the portfolio system"
 
@@ -27,6 +37,15 @@ class Command(BaseCommand):
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/Up1v0sAAAAASUVORK5CYII="
     )
 
+        """Auto-generated docstring for function add_arguments.
+
+        Args:
+            self: Description.
+            parser: Description.
+
+        Returns:
+            Description.
+        """
     def add_arguments(self, parser):
         parser.add_argument(
             "--password",
@@ -36,6 +55,16 @@ class Command(BaseCommand):
         )
 
     @transaction.atomic
+        """Auto-generated docstring for function handle.
+
+        Args:
+            self: Description.
+            *args: Description.
+            **options: Description.
+
+        Returns:
+            Description.
+        """
     def handle(self, *args, **options):
         User = get_user_model()
 
@@ -101,6 +130,18 @@ class Command(BaseCommand):
         self.stdout.write(f"Seeded users: mallikarjun / {seed_password}")
         self.stdout.write(f"Seeded users: ananya / {seed_password}")
 
+        """Auto-generated docstring for function _upsert_user.
+
+        Args:
+            self: Description.
+            User: Description.
+            username: Description.
+            email: Description.
+            password: Description.
+
+        Returns:
+            Description.
+        """
     def _upsert_user(self, User, *, username: str, email: str, password: str):
         user, _ = User.objects.get_or_create(username=username, defaults={"email": email})
         if user.email != email:
@@ -112,6 +153,17 @@ class Command(BaseCommand):
             user.save(update_fields=["password"])
         return user
 
+        """Auto-generated docstring for function _upsert_theme.
+
+        Args:
+            self: Description.
+            name: Description.
+            config: Description.
+            is_default: Description.
+
+        Returns:
+            Description.
+        """
     def _upsert_theme(self, *, name: str, config: dict, is_default: bool = False) -> Theme:
         theme, _ = Theme.objects.update_or_create(
             name=name,
@@ -132,6 +184,20 @@ class Command(BaseCommand):
         theme: Theme,
         description: str,
         is_published: bool,
+        """Auto-generated docstring for function _upsert_portfolio.
+
+        Args:
+            self: Description.
+            user: Description.
+            title: Description.
+            slug: Description.
+            theme: Description.
+            description: Description.
+            is_published: Description.
+
+        Returns:
+            Description.
+        """
     ) -> Portfolio:
         portfolio, _ = Portfolio.objects.update_or_create(
             slug=slug,
@@ -145,12 +211,30 @@ class Command(BaseCommand):
         )
         return portfolio
 
+        """Auto-generated docstring for function _reset_portfolio.
+
+        Args:
+            self: Description.
+            portfolio: Description.
+
+        Returns:
+            Description.
+        """
     def _reset_portfolio(self, portfolio: Portfolio) -> None:
         portfolio.sections.all().delete()
         portfolio.projects.all().delete()
         portfolio.skills.all().delete()
         portfolio.experiences.all().delete()
 
+        """Auto-generated docstring for function _ensure_media_file.
+
+        Args:
+            self: Description.
+            relative_path: Description.
+
+        Returns:
+            Description.
+        """
     def _ensure_media_file(self, relative_path: str) -> None:
         rel = str(relative_path or "").lstrip("/\\")
         if not rel:
@@ -507,6 +591,16 @@ class Command(BaseCommand):
         self._seed_skills(portfolio=portfolio, persona=persona)
         self._seed_experiences(portfolio=portfolio, persona=persona)
 
+        """Auto-generated docstring for function _seed_projects.
+
+        Args:
+            self: Description.
+            portfolio: Description.
+            persona: Description.
+
+        Returns:
+            Description.
+        """
     def _seed_projects(self, *, portfolio: Portfolio, persona: str) -> None:
         username = portfolio.user.username
         if persona == "backend":
@@ -571,6 +665,16 @@ class Command(BaseCommand):
                 is_visible=True,
             )
 
+        """Auto-generated docstring for function _seed_skills.
+
+        Args:
+            self: Description.
+            portfolio: Description.
+            persona: Description.
+
+        Returns:
+            Description.
+        """
     def _seed_skills(self, *, portfolio: Portfolio, persona: str) -> None:
         if persona == "backend":
             skills_data = [
@@ -600,6 +704,16 @@ class Command(BaseCommand):
                 is_visible=True,
             )
 
+        """Auto-generated docstring for function _seed_experiences.
+
+        Args:
+            self: Description.
+            portfolio: Description.
+            persona: Description.
+
+        Returns:
+            Description.
+        """
     def _seed_experiences(self, *, portfolio: Portfolio, persona: str) -> None:
         if persona == "backend":
             experiences_data = [

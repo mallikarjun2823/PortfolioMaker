@@ -122,10 +122,24 @@ THEME_PRESETS: List[Dict[str, Any]] = [
 
 
 def list_theme_presets() -> List[Dict[str, Any]]:
+    """Return a shallow copy of the theme presets catalog.
+
+    Returns:
+        List[Dict[str, Any]]: A list of theme preset dictionaries suitable for
+        serializing or seeding into the database.
+    """
     return list(THEME_PRESETS)
 
 
 def get_theme_preset(name: str) -> Dict[str, Any] | None:
+    """Lookup a theme preset by its case-insensitive name.
+
+    Args:
+        name: Name of the theme to find.
+
+    Returns:
+        The matching theme dict or ``None`` if not found.
+    """
     name_norm = (name or "").strip().lower()
     for theme in THEME_PRESETS:
         if str(theme.get("name", "")).strip().lower() == name_norm:

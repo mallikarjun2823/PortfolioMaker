@@ -1,3 +1,10 @@
+"""API views for the ``portfolio`` app.
+
+This module exposes class-based DRF views that delegate business logic to
+the services layer. Views are thin and primarily responsible for request
+validation, invoking services, and returning serialized responses.
+"""
+
 from __future__ import annotations
 
 from rest_framework import status
@@ -56,33 +63,68 @@ from .models import Theme
 
 
 class PortfolioRenderAPIView(APIView):
+    """Render an authenticated user's portfolio payload.
+
+    Returns a fully-serialized representation including theme, sections and
+    block items. Requires authentication and only renders portfolios owned
+    by the requesting user.
+    """
+
     permission_classes = [IsAuthenticated]
     service = PortfolioRenderService()
 
     def get(self, request, portfolio_id: int):
+        """Return the rendered portfolio payload for the authenticated user.
+
+        Args:
+            request: DRF request with authenticated user.
+            portfolio_id: ID of the portfolio to render.
+
+        Returns:
+            HTTP 200 with serialized portfolio payload, or 404 if not found.
+        """
         payload = self.service.render_portfolio(
-            portfolio_id=portfolio_id,
-            user_id=request.user.id,
-            include_unpublished=True,
+            portfolio_id=portfolio_id, user_id=request.user.id, include_unpublished=True
         )
         return Response(payload, status=status.HTTP_200_OK)
 
 
 class PublicPortfolioRenderBySlugAPIView(APIView):
+    """Render a published portfolio accessible by public slug.
+
+    This endpoint is unauthenticated and only returns portfolios that are
+    published and match the provided slug.
+    """
+
     authentication_classes = []
     permission_classes = [AllowAny]
     service = PortfolioRenderService()
 
     def get(self, request, slug: str):
+        """Return a public portfolio payload by slug.
+
+        Args:
+            slug: Public slug string.
+
+        Returns:
+            HTTP 200 with serialized portfolio payload, or 404 if not found.
+        """
         payload = self.service.render_public_portfolio_by_slug(slug)
         return Response(payload, status=status.HTTP_200_OK)
 
 
 class RegisterAPIView(APIView):
+    """Register new users and return authentication tokens."""
+
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """Register a new user.
+
+        Validates input via :class:`RegisterSerializer` then delegates to
+        :class:`AuthService` to create the user and issue JWT tokens.
+        """
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         tokens = AuthService().register(**serializer.validated_data)
@@ -91,10 +133,13 @@ class RegisterAPIView(APIView):
 
 
 class LoginAPIView(APIView):
+    """Authenticate users and return JWT tokens."""
+
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """Authenticate credentials and return access/refresh tokens."""
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         tokens = AuthService().login(**serializer.validated_data)
@@ -103,25 +148,32 @@ class LoginAPIView(APIView):
 
 
 class ThemeListAPIView(APIView):
+    """List available active theme presets."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        """Return active themes ordered with defaults first."""
         themes = Theme.objects.filter(is_active=True).order_by("-is_default", "name", "id")
         serializer = ThemeResponseSerializer(themes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class PortfolioAPIView(APIView):
+    """List and create portfolios for the authenticated user."""
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = PortfolioService()
 
     def get(self, request):
+        """Return the list of portfolios owned by the authenticated user."""
         portfolios = self.service.list(user=request.user)
         serializer = PortfolioResponseSerializer(portfolios, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
+        """Create a new portfolio owned by the authenticated user."""
         serializer = PortfolioCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         portfolio = self.service.create(user=request.user, validated_data=serializer.validated_data)
@@ -130,11 +182,14 @@ class PortfolioAPIView(APIView):
 
 
 class PortfolioDetailAPIView(APIView):
+    """Retrieve, update or delete a specific portfolio owned by the user."""
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = PortfolioService()
 
     def _get_object(self, request, pk: int):
+        """Resolve and return the portfolio instance for the requesting user."""
         portfolio = self.service.retrieve(user=request.user, portfolio_id=pk)
         return portfolio
 
@@ -166,6 +221,8 @@ class PortfolioDetailAPIView(APIView):
 
 
 class ProjectListCreateAPIView(APIView):
+    """List and create projects within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = ProjectService()
@@ -178,16 +235,14 @@ class ProjectListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int):
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        project = self.service.create(
-            portfolio_id=portfolio_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        project = self.service.create(portfolio_id=portfolio_id, user=request.user, validated_data=serializer.validated_data)
         response = ProjectResponseSerializer(project)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class ProjectDetailAPIView(APIView):
+    """Retrieve, update, delete a project in a portfolio."""
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     service = ProjectService()
@@ -205,11 +260,7 @@ class ProjectDetailAPIView(APIView):
         project = self._get_object(request, portfolio_id, project_id)
         serializer = ProjectPutSerializer(project, data=request.data)
         serializer.is_valid(raise_exception=True)
-        project = self.service.update(
-            instance=project,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        project = self.service.update(instance=project, user=request.user, validated_data=serializer.validated_data)
         response = ProjectResponseSerializer(project)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -217,11 +268,7 @@ class ProjectDetailAPIView(APIView):
         project = self._get_object(request, portfolio_id, project_id)
         serializer = ProjectPatchSerializer(project, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        project = self.service.update(
-            instance=project,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        project = self.service.update(instance=project, user=request.user, validated_data=serializer.validated_data)
         response = ProjectResponseSerializer(project)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -232,6 +279,8 @@ class ProjectDetailAPIView(APIView):
 
 
 class SkillListCreateAPIView(APIView):
+    """List and create skills within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = SkillService()
 
@@ -243,16 +292,14 @@ class SkillListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int):
         serializer = SkillCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        skill = self.service.create(
-            portfolio_id=portfolio_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        skill = self.service.create(portfolio_id=portfolio_id, user=request.user, validated_data=serializer.validated_data)
         response = SkillResponseSerializer(skill)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class SkillDetailAPIView(APIView):
+    """Retrieve, update, delete a skill within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = SkillService()
 
@@ -269,11 +316,7 @@ class SkillDetailAPIView(APIView):
         skill = self._get_object(request, portfolio_id, skill_id)
         serializer = SkillPutSerializer(skill, data=request.data)
         serializer.is_valid(raise_exception=True)
-        skill = self.service.update(
-            instance=skill,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        skill = self.service.update(instance=skill, user=request.user, validated_data=serializer.validated_data)
         response = SkillResponseSerializer(skill)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -281,11 +324,7 @@ class SkillDetailAPIView(APIView):
         skill = self._get_object(request, portfolio_id, skill_id)
         serializer = SkillPatchSerializer(skill, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        skill = self.service.update(
-            instance=skill,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        skill = self.service.update(instance=skill, user=request.user, validated_data=serializer.validated_data)
         response = SkillResponseSerializer(skill)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -296,6 +335,8 @@ class SkillDetailAPIView(APIView):
 
 
 class ExperienceListCreateAPIView(APIView):
+    """List and create experiences within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = ExperienceService()
 
@@ -307,25 +348,19 @@ class ExperienceListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int):
         serializer = ExperienceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        experience = self.service.create(
-            portfolio_id=portfolio_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        experience = self.service.create(portfolio_id=portfolio_id, user=request.user, validated_data=serializer.validated_data)
         response = ExperienceResponseSerializer(experience)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class ExperienceDetailAPIView(APIView):
+    """Retrieve, update, delete an experience within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = ExperienceService()
 
     def _get_object(self, request, portfolio_id: int, experience_id: int):
-        experience = self.service.retrieve(
-            portfolio_id=portfolio_id,
-            experience_id=experience_id,
-            user=request.user,
-        )
+        experience = self.service.retrieve(portfolio_id=portfolio_id, experience_id=experience_id, user=request.user)
         return experience
 
     def get(self, request, portfolio_id: int, experience_id: int):
@@ -337,11 +372,7 @@ class ExperienceDetailAPIView(APIView):
         experience = self._get_object(request, portfolio_id, experience_id)
         serializer = ExperiencePutSerializer(experience, data=request.data)
         serializer.is_valid(raise_exception=True)
-        experience = self.service.update(
-            instance=experience,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        experience = self.service.update(instance=experience, user=request.user, validated_data=serializer.validated_data)
         response = ExperienceResponseSerializer(experience)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -349,11 +380,7 @@ class ExperienceDetailAPIView(APIView):
         experience = self._get_object(request, portfolio_id, experience_id)
         serializer = ExperiencePatchSerializer(experience, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        experience = self.service.update(
-            instance=experience,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        experience = self.service.update(instance=experience, user=request.user, validated_data=serializer.validated_data)
         response = ExperienceResponseSerializer(experience)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -364,6 +391,8 @@ class ExperienceDetailAPIView(APIView):
 
 
 class SectionListCreateAPIView(APIView):
+    """List and create sections within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = SectionService()
 
@@ -375,16 +404,14 @@ class SectionListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int):
         serializer = SectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        section = self.service.create(
-            portfolio_id=portfolio_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        section = self.service.create(portfolio_id=portfolio_id, user=request.user, validated_data=serializer.validated_data)
         response = SectionResponseSerializer(section)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class SectionDetailAPIView(APIView):
+    """Retrieve, update, delete a section within a portfolio."""
+
     permission_classes = [IsAuthenticated]
     service = SectionService()
 
@@ -401,11 +428,7 @@ class SectionDetailAPIView(APIView):
         section = self._get_object(request, portfolio_id, section_id)
         serializer = SectionPutSerializer(section, data=request.data)
         serializer.is_valid(raise_exception=True)
-        section = self.service.update(
-            instance=section,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        section = self.service.update(instance=section, user=request.user, validated_data=serializer.validated_data)
         response = SectionResponseSerializer(section)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -413,11 +436,7 @@ class SectionDetailAPIView(APIView):
         section = self._get_object(request, portfolio_id, section_id)
         serializer = SectionPatchSerializer(section, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        section = self.service.update(
-            instance=section,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        section = self.service.update(instance=section, user=request.user, validated_data=serializer.validated_data)
         response = SectionResponseSerializer(section)
         return Response(response.data, status=status.HTTP_200_OK)
 
@@ -428,6 +447,8 @@ class SectionDetailAPIView(APIView):
 
 
 class BlockListCreateAPIView(APIView):
+    """List and create blocks inside a section."""
+
     permission_classes = [IsAuthenticated]
     service = BlockService()
 
@@ -439,27 +460,19 @@ class BlockListCreateAPIView(APIView):
     def post(self, request, portfolio_id: int, section_id: int):
         serializer = BlockCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        block = self.service.create(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        block = self.service.create(portfolio_id=portfolio_id, section_id=section_id, user=request.user, validated_data=serializer.validated_data)
         response = BlockResponseSerializer(block)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class BlockDetailAPIView(APIView):
+    """Retrieve, update, delete a block inside a section."""
+
     permission_classes = [IsAuthenticated]
     service = BlockService()
 
     def _get_object(self, request, portfolio_id: int, section_id: int, block_id: int):
-        block = self.service.retrieve(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            block_id=block_id,
-            user=request.user,
-        )
+        block = self.service.retrieve(portfolio_id=portfolio_id, section_id=section_id, block_id=block_id, user=request.user)
         return block
 
     def get(self, request, portfolio_id: int, section_id: int, block_id: int):
@@ -490,45 +503,32 @@ class BlockDetailAPIView(APIView):
 
 
 class ElementListCreateAPIView(APIView):
+    """List and create elements inside a block."""
+
     permission_classes = [IsAuthenticated]
     service = ElementService()
 
     def get(self, request, portfolio_id: int, section_id: int, block_id: int):
-        elements = self.service.list(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            block_id=block_id,
-            user=request.user,
-        )
+        elements = self.service.list(portfolio_id=portfolio_id, section_id=section_id, block_id=block_id, user=request.user)
         serializer = ElementResponseSerializer(elements, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, portfolio_id: int, section_id: int, block_id: int):
         serializer = ElementCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        element = self.service.create(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            block_id=block_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        element = self.service.create(portfolio_id=portfolio_id, section_id=section_id, block_id=block_id, user=request.user, validated_data=serializer.validated_data)
         response = ElementResponseSerializer(element)
         return Response(response.data, status=status.HTTP_201_CREATED)
 
 
 class ElementDetailAPIView(APIView):
+    """Retrieve, update, delete an element inside a block."""
+
     permission_classes = [IsAuthenticated]
     service = ElementService()
 
     def _get_object(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):
-        element = self.service.retrieve(
-            portfolio_id=portfolio_id,
-            section_id=section_id,
-            block_id=block_id,
-            element_id=element_id,
-            user=request.user,
-        )
+        element = self.service.retrieve(portfolio_id=portfolio_id, section_id=section_id, block_id=block_id, element_id=element_id, user=request.user)
         return element
 
     def get(self, request, portfolio_id: int, section_id: int, block_id: int, element_id: int):

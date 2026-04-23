@@ -1,6 +1,16 @@
+"""Auto-generated module docstring for portfolio\migrations\0006_alter_blank_config_fields.py.
+
+This docstring was added by scripts/add_docstrings.py.
+"""
+
 from django.db import migrations, models
 
 
+    """Auto-generated docstring for class Migration.
+
+    Returns:
+        Description.
+    """
 class Migration(migrations.Migration):
     dependencies = [
         ("portfolio", "0005_portfolio_user_slug_unique_and_theme_optional"),
