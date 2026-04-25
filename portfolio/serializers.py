@@ -46,6 +46,7 @@ class PortfolioOverviewSerializer(serializers.Serializer):
     projects = serializers.ListField(child=serializers.DictField(), read_only=True)
     skills = serializers.ListField(child=serializers.DictField(), read_only=True)
     experience = serializers.ListField(child=serializers.DictField(), read_only=True)
+    analytics = serializers.DictField(read_only=True)
 
 
 class PortfolioResponseSerializer(serializers.ModelSerializer):
@@ -783,4 +784,3 @@ class ResumeUploadStatusSerializer(serializers.ModelSerializer):
         model = ResumeUpload
         fields = ["id", "user", "portfolio", "file", "status", "parsed_data", "error", "created_at"]
         read_only_fields = fields
-

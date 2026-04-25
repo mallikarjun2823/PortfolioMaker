@@ -57,13 +57,13 @@ from .services import (
     PortfolioService,
     PortfolioTemplateService,
     ProjectService,
-    ResumeImportService,
     SectionService,
     SkillService,
     DomainException,
     DomainNotFoundException,
     DomainPermissionException,
     DomainValidationException,
+    AnalyticsService,
 )
 
 from .models import Theme
@@ -143,6 +143,14 @@ class PublicPortfolioRenderBySlugAPIView(DomainHandledAPIView):
 
     def get(self, request, slug: str):
         portfolio = self.service.get_public_full_portfolio_by_slug(slug=slug)
+
+        # Service-level analytics: owner check, IP throttle and event creation
+        try:
+            AnalyticsService().record_portfolio_view(portfolio, request)
+        except Exception:
+            # AnalyticsService already logs internally; don't break the public endpoint
+            pass
+
         serializer = PortfolioRenderSerializer(portfolio)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -266,6 +274,18 @@ class PortfolioOverviewAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class PortfolioAnalyticsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    service = PortfolioService()
+    analytics_service = AnalyticsService()
+
+    def get(self, request, portfolio_id: int):
+        # Ensure requester is owner (service will enforce owner scope)
+        portfolio = self.service.get_full_portfolio(portfolio_id=portfolio_id, user=request.user)
+        metrics = self.analytics_service.get_portfolio_metrics(portfolio=portfolio)
+        return Response(metrics, status=status.HTTP_200_OK)
+
+
 class PublicPortfolioOverviewBySlugAPIView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -296,7 +316,7 @@ class ApplyPortfolioTemplateAPIView(APIView):
 class ImportPortfolioFromResumeAPIView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-    service = ResumeImportService()
+
 
     def post(self, request, portfolio_id: int):
         serializer = ResumeUploadSerializer(data=request.data)
@@ -320,7 +340,6 @@ class ImportPortfolioFromResumeAPIView(APIView):
 
 class ResumeUploadStatusAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    service = ResumeImportService()
 
     def get(self, request, upload_id: int):
         upload = self.service.get_upload(upload_id=upload_id, user=request.user)
@@ -330,7 +349,6 @@ class ResumeUploadStatusAPIView(APIView):
 
 class PortfolioResumeDraftAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    service = ResumeImportService()
 
     def get(self, request, portfolio_id: int):
         upload = self.service.get_latest_draft(portfolio_id=portfolio_id, user=request.user)
@@ -350,7 +368,6 @@ class PortfolioResumeDraftAPIView(APIView):
 
 class ApplyResumeDraftAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    service = ResumeImportService()
 
     def post(self, request, portfolio_id: int, upload_id: int):
         result = self.service.apply_upload(portfolio_id=portfolio_id, upload_id=upload_id, user=request.user)

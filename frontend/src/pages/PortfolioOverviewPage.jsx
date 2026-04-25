@@ -5,6 +5,7 @@ import { api } from '../services/api.js'
 import { useAuth } from '../services/auth.jsx'
 import { toErrorMessage, useToast } from '../services/toast.jsx'
 import { Button, Card, CardTitle, EmptyState, ErrorBanner, Field, Input, Modal, PageHeader, Pill } from '../components/Ui.jsx'
+import AnalyticsCard from '../components/AnalyticsCard.jsx'
 
 export default function PortfolioOverviewPage() {
   const { token } = useAuth()
@@ -15,6 +16,7 @@ export default function PortfolioOverviewPage() {
   const [projects, setProjects] = useState([])
   const [skills, setSkills] = useState([])
   const [experiences, setExperiences] = useState([])
+  const [analytics, setAnalytics] = useState(null)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -32,6 +34,7 @@ export default function PortfolioOverviewPage() {
       setPortfolio(overview?.portfolio || null)
       setProjects(Array.isArray(overview?.projects) ? overview.projects : [])
       setSkills(Array.isArray(overview?.skills) ? overview.skills : [])
+        setAnalytics(overview?.analytics || null)
 
       const experienceList = Array.isArray(overview?.experience)
         ? overview.experience
@@ -123,6 +126,7 @@ export default function PortfolioOverviewPage() {
         <EmptyState title="Portfolio not found" subtitle="This portfolio might not exist or you might not have access." />
       ) : (
         <div className="layoutGrid2">
+          <AnalyticsCard analytics={analytics} />
           <Card>
             <CardTitle>Projects</CardTitle>
             <div className="row" style={{ justifyContent: 'space-between' }}>

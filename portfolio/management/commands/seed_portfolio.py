@@ -5,6 +5,9 @@ from django.db import transaction
 
 import base64
 import os
+import random
+from datetime import timedelta
+from django.utils import timezone
 
 from portfolio.models import (
     Theme,
@@ -97,9 +100,57 @@ class Command(BaseCommand):
         self._build_portfolio(portfolio=mallikarjun_portfolio, persona="backend")
         self._build_portfolio(portfolio=ananya_portfolio, persona="designer")
 
+        # 5. Seed some realistic portfolio views for analytics testing
+        self._seed_views(portfolio=mallikarjun_portfolio, days=14)
+        self._seed_views(portfolio=ananya_portfolio, days=14)
+
         self.stdout.write(self.style.SUCCESS("Seed data created successfully."))
         self.stdout.write(f"Seeded users: mallikarjun / {seed_password}")
         self.stdout.write(f"Seeded users: ananya / {seed_password}")
+
+    def _seed_views(self, *, portfolio: Portfolio, days: int = 14, max_per_day: int = 12) -> None:
+        """Create synthetic PortfolioView rows over the last `days` days for `portfolio`.
+
+        This helps exercise analytics: total_views, unique_visitors, views_per_day.
+        """
+        # minimal UA/IP pools for variety
+        ip_bases = [
+            "203.0.113.",
+            "198.51.100.",
+            "192.0.2.",
+        ]
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15",
+            "curl/7.68.0",
+            "PostmanRuntime/7.26.8",
+        ]
+
+        created = 0
+        for day_offset in range(days):
+            # simple skew: more recent days have higher traffic
+            base = max(0, max_per_day - day_offset // 2)
+            count = random.randint(0, base)
+            for _ in range(count):
+                ip = random.choice(ip_bases) + str(random.randint(2, 250))
+                ua = random.choice(user_agents)
+                # spread within the day
+                visit_time = timezone.now() - timedelta(days=day_offset, seconds=random.randint(0, 86399))
+                try:
+                    from portfolio.models import PortfolioView
+
+                    PortfolioView.objects.create(
+                        portfolio=portfolio,
+                        client_ip=ip,
+                        user_agent=ua,
+                        visit_time=visit_time,
+                    )
+                    created += 1
+                except Exception:
+                    # avoid failing the whole seed if one insert fails
+                    continue
+
+        self.stdout.write(f"Seeded {created} views for portfolio {portfolio.slug}")
 
     def _upsert_user(self, User, *, username: str, email: str, password: str):
         user, _ = User.objects.get_or_create(username=username, defaults={"email": email})

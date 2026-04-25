@@ -353,3 +353,16 @@ class ResumeUpload(models.Model):
 
     def __str__(self):
         return f"ResumeUpload({self.id}) {self.status}"
+
+class PortfolioView(models.Model):
+    portfolio = models.ForeignKey(
+        Portfolio,
+        on_delete=models.CASCADE,
+        related_name="views"
+    )
+    client_ip = models.GenericIPAddressField(null=True, blank=True)
+    visit_time = models.DateTimeField(auto_now_add=True)
+    user_agent = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"PortfolioView(portfolio_id={self.portfolio_id}, ip={self.client_ip})"

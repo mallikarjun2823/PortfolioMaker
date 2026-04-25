@@ -15,6 +15,11 @@ urlpatterns = [
         name="portfolio-overview",
     ),
     path(
+        "portfolios/<int:portfolio_id>/analytics/",
+        views.PortfolioAnalyticsAPIView.as_view(),
+        name="portfolio-analytics",
+    ),
+    path(
         "portfolios/<int:portfolio_id>/apply-template/",
         views.ApplyPortfolioTemplateAPIView.as_view(),
         name="portfolio-apply-template",

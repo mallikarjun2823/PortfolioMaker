@@ -134,6 +134,7 @@ const getPortfolioRender = (token, portfolioId) => apiRequest(`/portfolios/${por
 const getPublicPortfolioRenderBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/render/`)
 const getPublicPortfolioOverviewBySlug = (slug) => apiRequest(`/public/portfolios/${slug}/overview/`)
 const getPortfolioOverview = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/overview/`, { token })
+const getPortfolioAnalytics = (token, portfolioId) => apiRequest(`/portfolios/${portfolioId}/analytics/`, { token })
 const listTemplates = (token) => apiRequest('/templates/', { token })
 const applyPortfolioTemplate = (token, portfolioId, templateId) =>
   apiRequest(`/portfolios/${portfolioId}/apply-template/`, {
@@ -161,6 +162,7 @@ export const api = {
   createPortfolio: (token, payload) => apiRequest('/portfolios/', { method: 'POST', token, body: payload }),
   getPortfolio: (token, id) => apiRequest(`/portfolios/${id}/`, { token }),
   getPortfolioOverview,
+  getPortfolioAnalytics,
   listTemplates,
   applyPortfolioTemplate,
   importPortfolioFromResume,
